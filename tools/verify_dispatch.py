@@ -230,6 +230,10 @@ class L3Result:
     total_hits: int = 0
     kernel_family_executed: str = "none"
     wall_time_sec: float = 0.0
+    # gdb lane only: proves the probe was actually instrumented, so a zero hit
+    # count can be read as "the kernel did not run" rather than "we never looked".
+    breakpoints_requested: Optional[int] = None
+    breakpoints_created: Optional[int] = None
 
 
 # --------------------------------------------------------------------------
@@ -645,13 +649,47 @@ def run_l3_lldb(binary: str, model: str, threads: int, prompt: str, n_predict: i
     return result
 
 
+def enumerate_dispatch_symbols(lib_path: Optional[str], dispatch_regex: str) -> list:
+    """Return the concrete kernel-entry symbol names matching `dispatch_regex`.
+
+    GDB needs explicit names rather than a regex: ggml dlopen's the CPU backend after
+    process start, and `rbreak` -- unlike `break` -- does not create pending
+    breakpoints, so a regex evaluated before `run` matches nothing and silently
+    instruments nothing. See tools/dispatch_probe.gdb's header for the full story.
+    """
+    if not lib_path or not os.path.isfile(lib_path):
+        return []
+    nm_bin = shutil.which("nm")
+    if not nm_bin:
+        return []
+    is_darwin = platform.system() == "Darwin"
+    nm_args = [nm_bin, "-gU", lib_path] if is_darwin else [nm_bin, "-D", lib_path]
+    try:
+        out = subprocess.run(nm_args, capture_output=True, text=True, timeout=30)
+    except Exception:
+        return []
+    dispatch_re = re.compile(dispatch_regex)
+    names = set()
+    for line in out.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        # Mach-O prefixes global symbols with an underscore; ELF does not.
+        sym = parts[-1].lstrip("_") if is_darwin else parts[-1]
+        if dispatch_re.match(sym):
+            names.add(sym)
+    return sorted(names)
+
+
 def run_l3_gdb(binary: str, model: str, threads: int, prompt: str, n_predict: int,
-               dispatch_regex: str, timeout: float, env: dict) -> L3Result:
-    """GDB counterpart of run_l3_lldb. See dispatch_probe.gdb's header: this
-    path is written to the documented GDB Python API but has NOT been
-    exercised on real hardware from this codebase (no gdb on the macOS dev
-    machine). Treat its output as unverified until it has actually run in
-    the Linux CI lane.
+               dispatch_regex: str, timeout: float, env: dict,
+               lib_path: Optional[str] = None) -> L3Result:
+    """GDB counterpart of run_l3_lldb.
+
+    Sets one pending breakpoint per concrete kernel symbol (enumerated via nm) rather
+    than a pre-`run` regex, and counts hits with a gdb.Breakpoint subclass whose
+    stop() returns False so the inferior is never halted. Validated against a
+    ground-truth dlopen harness on aarch64 Linux; see tools/dispatch_probe.gdb.
     """
     result = L3Result(debugger="gdb", available=True, dispatch_regex=dispatch_regex)
     gdb_bin = shutil.which("gdb")
@@ -660,7 +698,19 @@ def run_l3_gdb(binary: str, model: str, threads: int, prompt: str, n_predict: in
         result.error = "gdb not found on PATH"
         return result
 
-    script_text = _render_template(GDB_TEMPLATE_PATH, {"DISPATCH_REGEX": dispatch_regex})
+    symbols = enumerate_dispatch_symbols(lib_path, dispatch_regex)
+    if not symbols:
+        # Fail loudly. An uninstrumented probe returns zero hits, which is
+        # indistinguishable from a genuine no-dispatch result -- exactly the
+        # conflation this project exists to eliminate.
+        result.available = False
+        result.error = (
+            "no symbols matching %r found in %r; refusing to run an uninstrumented "
+            "probe that would report a misleading zero" % (dispatch_regex, lib_path)
+        )
+        return result
+
+    script_text = _render_template(GDB_TEMPLATE_PATH, {"DP_SYMBOLS": repr(symbols)})
     with tempfile.NamedTemporaryFile("w", suffix=".gdb", delete=False) as fh:
         fh.write(script_text)
         script_path = fh.name
@@ -688,7 +738,14 @@ def run_l3_gdb(binary: str, model: str, threads: int, prompt: str, n_predict: in
 
     hits_by_symbol = {}
     in_block = False
+    breakpoints_created = None
     for line in out.splitlines():
+        if line.startswith("DP_BREAKPOINTS_CREATED "):
+            try:
+                breakpoints_created = int(line.split()[1])
+            except (IndexError, ValueError):
+                pass
+            continue
         if line.strip() == "DISPATCH_PROBE_RESULT_BEGIN":
             in_block = True
             continue
@@ -698,6 +755,21 @@ def run_l3_gdb(binary: str, model: str, threads: int, prompt: str, n_predict: in
         if in_block and line.startswith("DP_HIT "):
             _, name, count = line.split(" ", 2)
             hits_by_symbol[name] = int(count)
+
+    result.breakpoints_requested = len(symbols)
+    result.breakpoints_created = breakpoints_created
+
+    # If gdb instrumented nothing, a zero hit count means "the probe was broken",
+    # not "the kernel did not run". Never let those two report identically -- that
+    # confusion is precisely the bug this tool found in llama.cpp, and the bug that
+    # this tool's own v1 gdb path shipped with.
+    if not breakpoints_created:
+        result.error = (
+            "gdb created 0 of %d requested breakpoints -- probe was not instrumented, "
+            "so a zero hit count here is meaningless" % len(symbols)
+        )
+        result.completed = False
+        return result
 
     total = sum(hits_by_symbol.values())
     hits_by_family: dict = {}
@@ -947,7 +1019,8 @@ def main(argv=None) -> int:
                                   args.dispatch_regex, args.l3_timeout, run_env)
             elif debugger == "gdb":
                 l3 = run_l3_gdb(binary, model, threads, workload["prompt"], workload["n_predict"],
-                                 args.dispatch_regex, args.l3_timeout, run_env)
+                                 args.dispatch_regex, args.l3_timeout, run_env,
+                                 lib_path=lib_path)
             else:
                 l3 = L3Result(debugger="none", available=False, error="L3 skipped (--skip-l3 or no debugger found)",
                                dispatch_regex=args.dispatch_regex)

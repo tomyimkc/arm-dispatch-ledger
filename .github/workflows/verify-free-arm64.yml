@@ -109,6 +109,16 @@ jobs:
       - name: Run correctness tests
         run: bash scripts/lib/run_correctness_tests.sh
 
+      - name: L3 gdb probe ground-truth test
+        # Gates the dispatch verifier itself against a known call count before we
+        # trust any number it produces below. The first revision of the gdb probe
+        # silently reported 0 hits for every config on this exact runner (run
+        # 30861845179) because `rbreak` cannot create pending breakpoints for a
+        # dlopen'd backend. This test would have caught that immediately, so it is
+        # deliberately NOT continue-on-error: an uninstrumented probe must fail the
+        # build, never quietly emit zeros.
+        run: bash tests/l3_gdb_groundtruth/run_test.sh 7
+
       - name: Verify dispatch (thread sweep)
         # See the Finding 2 note in the file header: a Neoverse-N2-specific
         # non-engagement of the SVE path is an expected result, recorded in
@@ -137,6 +147,20 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: arm-dispatch-ledger-results-free-arm64
-          path: results/
-          if-no-files-found: warn
+          # Upload ONLY what this run generated. A bare `path: results/` also sweeps up
+          # the committed Apple M4 Max results, so the "free-arm64" artifact ends up
+          # containing hw-features-Darwin-arm64.txt and an M4 Max bench table -- which
+          # reads as though a Neoverse-N2 runner produced Apple Silicon numbers.
+          # Evidence provenance is the whole point here; keep the lanes separate.
+          path: |
+            results/*Linux*
+            results/*aarch64*
+            results/LEDGER.md
+            results/stage-status.tsv
+            results/bench/bench-aarch64.*
+            results/logs/
+            !results/*[Dd]arwin*
+            !results/*apple*
+            !results/bench/*apple*
+          if-no-files-found: error
           retention-days: 30
