@@ -864,6 +864,12 @@ def build_config_record(platform_meta: dict, model: str, quant: str, threads: in
             "hits_by_symbol": l3.hits_by_symbol,
             "hits_by_family": l3.hits_by_family,
             "total_hits": l3.total_hits,
+            # gdb lane: proof the probe was instrumented at all, so a reader can tell
+            # "0 hits because the kernel did not run" from "0 hits because we never
+            # set a breakpoint". null on the lldb lane, which resolves regex
+            # breakpoints itself and has no equivalent counter.
+            "breakpoints_requested": l3.breakpoints_requested,
+            "breakpoints_created": l3.breakpoints_created,
         },
         "advertised_family": advertised,
         "verdict": verdict,
