@@ -1,0 +1,19 @@
+arm-dispatch-ledger: detected CPU: Apple M4 Max
+  NEON=1 SME=1 SME2=1 SVE=0 SVE2=0 I8MM=1 BF16=1 DotProd=1
+  SME streaming vector length: 512 bits
+
+--- fp32 GEMM ---
+N= 512 | neon_sgemm (tuned)         99.42 GFLOP/s (0.0027s)
+N= 512 | sme2_sgemm_packed          503.63 GFLOP/s (0.0005s)  [excludes A-transpose, matches the honest baseline methodology in the top-level README]
+N= 512 | Accelerate cblas_sgemm    1607.40 GFLOP/s (0.0002s)  [strongest fair fp32 baseline]
+N=1024 | neon_sgemm (tuned)         95.95 GFLOP/s (0.0224s)
+N=1024 | sme2_sgemm_packed          463.62 GFLOP/s (0.0046s)  [excludes A-transpose, matches the honest baseline methodology in the top-level README]
+N=1024 | Accelerate cblas_sgemm    3103.30 GFLOP/s (0.0007s)  [strongest fair fp32 baseline]
+N=2048 | neon_sgemm (tuned)         49.71 GFLOP/s (0.3456s)
+N=2048 | sme2_sgemm_packed          185.17 GFLOP/s (0.0928s)  [excludes A-transpose, matches the honest baseline methodology in the top-level README]
+N=2048 | Accelerate cblas_sgemm    3408.03 GFLOP/s (0.0050s)  [strongest fair fp32 baseline]
+
+--- int8 GEMM (sme2_gemm_s8s8_s32) ---
+N= 512 | sme2_gemm_s8s8_s32         101.83 GOP/s  (0.0026s)  [no Accelerate column: Accelerate has no integer GEMM at all -- this IS the honest gap]
+N=1024 | sme2_gemm_s8s8_s32         123.15 GOP/s  (0.0174s)  [no Accelerate column: Accelerate has no integer GEMM at all -- this IS the honest gap]
+N=2048 | sme2_gemm_s8s8_s32         115.98 GOP/s  (0.1481s)  [no Accelerate column: Accelerate has no integer GEMM at all -- this IS the honest gap]

@@ -29,12 +29,17 @@ Real output (this run): NEON fp32 bit-exact across 8 shapes; SME2 fp32 max-rel-d
 0.0036-0.0055 (tol 0.02) across 5 shapes; SVE2 kernels correctly self-report `-1`
 (unavailable) on this non-SVE2 host — `ALL CHECKS PASSED`, `EXIT=0`.
 
-Kernel microbenchmark (`./kernel_bench`, single-thread, this run): fp32 GEMM —
-NEON (tuned) 71.8/103.2/55.5 GFLOP/s, SME2 (packed) 397.7/485.3/212.2 GFLOP/s,
-Apple Accelerate 2049.1/3162.7/3373.2 GFLOP/s at N=512/1024/2048 respectively
-(Accelerate is still fastest by 3.5-15x — never claimed otherwise). int8 GEMM:
-SME2 103.9/127.6/119.8 GOP/s at N=512/1024/2048, no Accelerate column since
-Accelerate has no integer GEMM at all (the honest, non-strawman gap).
+Kernel microbenchmark (`./kernel_bench`, single-thread): fp32 GEMM —
+NEON (tuned) 99.4/96.0/49.7 GFLOP/s, SME2 (packed) 503.6/463.6/185.2 GFLOP/s,
+Apple Accelerate 1607.4/3103.3/3408.0 GFLOP/s at N=512/1024/2048 respectively
+(Accelerate is still fastest, by roughly 3.2x/6.7x/18.4x — never claimed otherwise;
+N=512 is noisy at this timing resolution, see caveat below). int8 GEMM:
+SME2 101.8/123.2/116.0 GOP/s at N=512/1024/2048, no Accelerate column since
+Accelerate has no integer GEMM at all (the honest, non-strawman gap). Raw, persisted
+artifact (added during adversarial review, 2026-08-04 — these numbers previously had
+no file in `results/` backing them): `results/bench/kernel-bench-apple-m4-max.log` /
+`.md`, which also documents run-to-run noise observed at N=512 (Accelerate swung
+1607-2509 GFLOP/s across three reruns; N=1024/2048 stayed within ~5%).
 
 ## 2. Dispatch verification — confirms Finding 1 (`tools/verify_dispatch.py`)
 

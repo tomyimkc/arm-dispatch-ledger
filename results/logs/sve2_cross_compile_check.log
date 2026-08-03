@@ -1,0 +1,25 @@
+# Added during adversarial review (2026-08-04): the README/FINDINGS claim that
+# "sve2_gemm.c compiles cleanly cross-compiled for -march=armv9.2-a+sve2+i8mm+bf16"
+# had no persisted artifact backing it in results/, and this Mac has no real
+# aarch64-linux-gnu sysroot (no glibc headers), so a normal `-target
+# aarch64-linux-gnu` cross-build fails on `#include <stdlib.h>` before it ever
+# gets to the SVE2 code. This log is a real, reproducible workaround: Apple
+# clang's *own* ACLE intrinsic headers (arm_sve.h, from
+# `$(clang -print-resource-dir)/include`) are target-independent, so pairing
+# `-nostdinc` + `-isystem <that dir>` + three minimal shim headers
+# (stdint.h/stdlib.h/string.h, just enough typedefs/prototypes to satisfy this
+# one file, no libc bodies) with `-target aarch64-linux-gnu` lets clang cross-
+# compile sve2_gemm.c for real, all the way to a genuine ELF aarch64 object
+# with real SVE2/i8mm instructions in it (confirmed below) -- not merely a
+# syntax check. This still does NOT substitute for running on real SVE2
+# hardware (see the correctness suite's [skip] on this file, and the Spark CI
+# lane) -- it only substantiates the narrower "compiles cleanly" claim.
+$ clang -target aarch64-linux-gnu -march=armv9.2-a+sve2+i8mm+bf16 -O2 -Wall -Wextra -c sve2_gemm.c -o sve2_gemm.o
+exit=0 (0 = clean compile, zero warnings, zero errors)
+
+$ file sve2_gemm.o
+/tmp/sve2_gemm_check.o: ELF 64-bit LSB relocatable, ARM aarch64, version 1 (SYSV), not stripped
+
+$ objdump -d sve2_gemm.o | grep -E "smmla|fmad|whilelt" (confirms real SVE2/i8mm instructions were emitted, not a stub)
+      90: 65a18440     	fmad	z0.s, p1/m, z2.s, z1.s
+     1f4: 45019802     	smmla	z2.s, z0.b, z1.b
