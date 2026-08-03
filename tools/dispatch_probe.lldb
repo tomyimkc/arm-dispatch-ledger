@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+#
+# dispatch_probe.lldb -- LLDB layer-3 (DISPATCH) probe template for verify_dispatch.py.
+#
+# This is a *template*: verify_dispatch.py reads this file, substitutes the
+# __DISPATCH_REGEX__ placeholder with a concrete `breakpoint set --func-regex`
+# pattern (default: `^kai_run_matmul`, i.e. every KleidiAI matmul entry point),
+# writes the result to a temporary .lldb file, and drives it with:
+#
+#   lldb -b -s <rendered-script> -- <binary> <arg1> <arg2> ...
+#
+# The target binary and its arguments are supplied on the lldb command line
+# itself (after `--`), NOT inside this script. `process launch` with no
+# arguments reuses whatever was bound on the command line, so this template
+# needs no knowledge of the model path, prompt, thread count, etc. That is
+# what makes it reusable across models, prompts and platforms unchanged.
+#
+# What this script does, step by step:
+#   1. Sets ONE regex breakpoint across every symbol matching __DISPATCH_REGEX__.
+#      A single breakpoint (id 1) can resolve to many locations (1.1, 1.2, ...),
+#      one per matching exported symbol -- this is what lets us recover a
+#      per-symbol hit count afterwards from a single `breakpoint list`.
+#   2. Registers an auto-continue command ("continue") on that breakpoint so
+#      the process is never left stopped waiting for a human -- every hit is
+#      counted (via LLDB's built-in per-location hit counter) and execution
+#      resumes immediately. This is the auto-continue upgrade explicitly
+#      called for in results/GROUND-TRUTH-DISPATCH.md's methodology caveat:
+#      a bare breakpoint with no auto-continue only tells you "stopped once",
+#      not a true call count.
+#   3. Launches the (already-bound) target and lets it run to completion.
+#   4. Dumps `breakpoint list`, which prints, per location:
+#        N.M: where = <lib>`<symbol>, address = 0x..., resolved, hit count = K
+#      verify_dispatch.py parses these lines to build hits_by_symbol{} and
+#      classifies each symbol into a kernel family (sme2/sme/sve/i8mm/dotprod/...).
+#   5. Quits. lldb's own exit code reflects whether the debugger session
+#      itself succeeded, not the inferior's exit status (llama-cli's exit
+#      status is not currently propagated by this script; if you need it,
+#      add `process handle` inspection before `quit`).
+#
+# IMPORTANT anchoring note: the regex is matched against the (possibly
+# demangled/templated) function name LLDB resolves. An UNANCHORED pattern
+# like "kai_run_matmul.*sme" also matches the compiler-generated template
+# thunk `kernel_run_fn11<&kai_run_matmul_..._sme2_mopa>(...)` THAT WRAPS the
+# real exported symbol -- and because that thunk is a tail-call (a single
+# `b` branch instruction) straight into the real symbol, LLDB stops at BOTH
+# addresses for what is really one call, silently doubling the hit count.
+# Anchoring with `^kai_run_matmul` (as verify_dispatch.py does by default)
+# only matches the real exported `kai_run_matmul_...` symbols and avoids this
+# double-count. Verified by hand on this machine: the unanchored pattern
+# reported 1992 hits for a workload the anchored pattern correctly reported
+# as 996 hits (two breakpoint locations per real call, at t=1, n=4, prompt
+# "Hello.", Apple M4 Max, llama.cpp dbadb68).
+#
+# Timeout / cost note: every breakpoint hit costs a full LLDB stop-the-world
+# + resume round trip. At higher thread counts and/or long prompts this can
+# add up to tens of thousands of hits and tens of seconds to minutes of
+# wall-clock time -- this is expected and is why verify_dispatch.py runs this
+# script under a configurable wall-clock timeout (--l3-timeout) and kills the
+# whole process group (not just lldb) if it is exceeded, rather than letting
+# a hung probe block an entire sweep.
+
+breakpoint set --func-regex "__DISPATCH_REGEX__"
+breakpoint command add 1 -o "continue"
+process launch
+breakpoint list
+quit

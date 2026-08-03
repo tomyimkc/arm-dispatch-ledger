@@ -1,0 +1,7 @@
+-- arm-dispatch-ledger/kernels: Apple build -- using -mcpu=apple-m4 (NOT -march=armv9-a+sme2, which SIGILLs on Apple Silicon; see docs)
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/tom/Documents/GitHub/arm-dispatch-ledger/kernels/build
+[ 63%] Built target arm_dispatch_kernels
+[100%] Built target kernel_bench
+[100%] Built target kernel_test

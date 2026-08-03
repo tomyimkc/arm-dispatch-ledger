@@ -1,0 +1,60 @@
+# verify_dispatch.py sweep -- darwin-arm64 / Apple M4 Max
+# binary=/tmp/llama.cpp/build/bin/llama-cli
+# model=/tmp/ggufs/q05.gguf
+# cpu backend lib=/tmp/llama.cpp/build/bin/libggml-cpu.dylib
+# threads=[1, 2, 4, 8, 16] workloads=['decode_short', 'prefill_long'] l3_debugger=lldb
+--- threads=1 workload=decode_short ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=sme2 total_hits=996 (14.2s)
+  VERDICT: SME2_DISPATCHED
+--- threads=2 workload=decode_short ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=sme2 total_hits=5826 (33.2s)
+  VERDICT: SME2_DISPATCHED
+--- threads=4 workload=decode_short ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=dotprod total_hits=15936 (57.4s)
+  VERDICT: SILENT_FALLBACK
+--- threads=8 workload=decode_short ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=dotprod total_hits=31871 (97.4s)
+  VERDICT: SILENT_FALLBACK
+--- threads=16 workload=decode_short ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=dotprod total_hits=51215 (148.4s)
+  VERDICT: SILENT_FALLBACK
+--- threads=1 workload=prefill_long ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=sme2 total_hits=660 (12.9s)
+  VERDICT: SME2_DISPATCHED
+--- threads=2 workload=prefill_long ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=sme2 total_hits=3853 (28.0s)
+  VERDICT: SME2_DISPATCHED
+--- threads=4 workload=prefill_long ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=dotprod total_hits=8943 (41.9s)
+  VERDICT: SME2_HYBRID_DISPATCH
+--- threads=8 workload=prefill_long ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=dotprod total_hits=15240 (55.1s)
+  VERDICT: SME2_HYBRID_DISPATCH
+--- threads=16 workload=prefill_long ---
+  L2: primary_kernel_feature={'q4': 'SME2', 'q8': 'SME2', 'f32': 'SME2'} sme_enabled=True buffer_fallback=True
+  L3: debugger=lldb completed=True timed_out=False kernel_family_executed=dotprod total_hits=22911 (77.0s)
+  VERDICT: SME2_HYBRID_DISPATCH
+
+Wrote ledger: /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/dispatch-ledger-Darwin-arm64.json
+
+| threads | workload | advertised (L2) | executed (L3) | hits (adv/other) | verdict |
+|---:|---|---|---|---|---|
+| 1 | decode_short | SME2 | sme2 | 996/0 | **SME2_DISPATCHED** |
+| 2 | decode_short | SME2 | sme2 | 5826/0 | **SME2_DISPATCHED** |
+| 4 | decode_short | SME2 | dotprod | 0/15936 | **SILENT_FALLBACK** |
+| 8 | decode_short | SME2 | dotprod | 0/31871 | **SILENT_FALLBACK** |
+| 16 | decode_short | SME2 | dotprod | 0/51215 | **SILENT_FALLBACK** |
+| 1 | prefill_long | SME2 | sme2 | 660/0 | **SME2_DISPATCHED** |
+| 2 | prefill_long | SME2 | sme2 | 3853/0 | **SME2_DISPATCHED** |
+| 4 | prefill_long | SME2 | dotprod | 2232/6711 | **SME2_HYBRID_DISPATCH** |
+| 8 | prefill_long | SME2 | dotprod | 1538/13702 | **SME2_HYBRID_DISPATCH** |
+| 16 | prefill_long | SME2 | dotprod | 1377/21534 | **SME2_HYBRID_DISPATCH** |

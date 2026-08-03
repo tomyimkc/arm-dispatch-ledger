@@ -1,0 +1,17 @@
+# arm-dispatch-ledger MCP dispatch advisor -- dependency list
+#
+# Deliberately EMPTY. server.py implements the MCP stdio JSON-RPC transport
+# directly against the Python standard library (json, subprocess, pathlib,
+# re, platform) so it has zero pip dependencies and works with any
+# Python >= 3.8, offline, on a judge's machine with nothing installed.
+#
+# The only external programs it shells out to (not pip packages):
+#   - sysctl        (macOS, always present)
+#   - lldb           (macOS Xcode Command Line Tools; optional -- the
+#                      L3 dispatch-time tier in verify_dispatch degrades
+#                      gracefully to "unavailable" if lldb is not on PATH)
+#
+# If you would rather run this server through the official MCP Python SDK
+# instead of the raw stdio implementation in server.py, that package is:
+#   mcp>=1.0.0
+# ...but it is NOT required and server.py does not import it.

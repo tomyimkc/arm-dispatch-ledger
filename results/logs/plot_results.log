@@ -1,0 +1,7 @@
+[plot_results.py] no measured data for phase=decode quant=Q8_0, skipped
+[plot_results.py] no measured data for phase=prefill_long quant=Q8_0, skipped
+[plot_results.py] no measured data for phase=prefill_short quant=Q8_0, skipped
+[plot_results.py] wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/bench/figures/bench-apple-m4-max-decode-Q4_0.png
+[plot_results.py] wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/bench/figures/bench-apple-m4-max-prefill_long-Q4_0.png
+[plot_results.py] wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/bench/figures/bench-apple-m4-max-prefill_short-Q4_0.png
+[plot_results.py] wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/bench/figures/bench-apple-m4-max-dispatch-table.md

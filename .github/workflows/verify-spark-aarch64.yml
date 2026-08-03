@@ -1,0 +1,175 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# verify-spark-aarch64.yml — the Cortex-X925 SVE2 lane.
+#
+# Runs on a self-hosted NVIDIA DGX Spark (10x Cortex-X925 + 10x Cortex-A725,
+# Armv9.2, SVE2 @ 128-bit, i8mm, bf16, NO SME). This is the one place this
+# repo can demonstrate Finding 2 (KleidiAI's SVE kernel path requires
+# ggml_cpu_get_sve_cnt() == QK8_0 == 256-bit, which this chip's 128-bit SVE2
+# can never satisfy) on hardware that genuinely has SVE2, i8mm, and bf16 —
+# as opposed to verify-free-arm64.yml's Neoverse-N2, which lacks some of
+# those features outright.
+#
+# THIS LANE MUST NEVER GATE ANYTHING. There is a live, unresolved incident
+# on this specific runner where the kernel kills the runner process
+# (suspected OOM; tracked in a separate still-open PR in this repo's
+# history) for reasons unrelated to this workflow. Every mitigation below
+# exists because of that:
+#   - workflow_dispatch is the ONLY trigger. No push, no pull_request, no
+#     pull_request_target, no schedule. A human must manually click "Run
+#     workflow" every time.
+#   - `continue-on-error: true` on the job AND on every step that touches
+#     the flaky runner, so a mid-run kernel-kill is reported as a
+#     non-blocking, informational failure rather than a red required check
+#     (this workflow should never be added to branch protection's required
+#     checks list in the first place — this comment is that warning).
+#   - A hard 30-minute job timeout, plus tighter per-step timeouts, so a
+#     wedged process cannot hold the runner indefinitely.
+#   - JOBS is pinned to a conservative 4 (see env below) rather than this
+#     repo's usual auto-detected cap of up to 8, to reduce peak build
+#     memory pressure on a runner already known to be OOM-prone.
+#   - `if: always()` on the ledger/upload steps, so whatever partial
+#     evidence exists before a kill still gets uploaded — valuable for
+#     debugging the kernel-kill incident itself, separately from this
+#     project's findings.
+#
+# SECURITY: self-hosted + physical hardware shared with other agents on
+# this cluster. Same reasoning as verify-macos-arm64.yml: never add
+# `pull_request` / `pull_request_target` here. workflow_dispatch requires at
+# least "write" collaborator permission to invoke.
+
+name: verify-spark-aarch64
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-spark-aarch64
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Build, verify dispatch, bench (Cortex-X925 SVE2, self-hosted, best-effort)
+    # NOTE: `actionlint` will flag "spark" and "aarch64" as unknown runner
+    # labels — expected, since these are custom self-hosted labels this
+    # specific machine registers itself with, not GitHub-hosted labels
+    # actionlint's static list can know about. Everything else actionlint
+    # reports for this repo's workflows should be treated as a real issue.
+    runs-on: [self-hosted, ARM64, Linux, spark, aarch64]
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      # Conservative override of this repo's usual build_jobs_cap() (up to
+      # 8): this runner has a known OOM-kill incident, so trade build speed
+      # for a smaller memory footprint here specifically. (CACHE_DIR is set
+      # further down via $GITHUB_ENV instead of here — the `runner` context
+      # needed for $RUNNER_TEMP is not available inside any `env:` mapping,
+      # only inside `run:`/`with:` steps; confirmed with `actionlint`.)
+      JOBS: 4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        continue-on-error: true
+
+      - name: Verify required tools are present
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          missing=0
+          for tool in git cmake curl python3 gcc gdb; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::warning::required tool '$tool' not found on this runner's PATH"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -eq 1 ]]; then
+            echo "::warning::one or more tools missing; later steps will likely fail (non-blocking on this lane, see file header)"
+          fi
+
+      - name: Compute cache keys and paths
+        id: vars
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          echo "CACHE_DIR=${RUNNER_TEMP}/adl-cache" >>"$GITHUB_ENV"
+          source scripts/common.sh
+          echo "llama_cpp_ref=${LLAMA_CPP_REF}" >>"$GITHUB_OUTPUT"
+          echo "hf_file_sha256=${HF_FILE_SHA256}" >>"$GITHUB_OUTPUT"
+
+      - name: Cache llama.cpp build
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/adl-cache/llama.cpp
+          key: llamacpp-${{ runner.os }}-${{ runner.arch }}-${{ steps.vars.outputs.llama_cpp_ref }}-kleidiai-v1
+
+      - name: Cache model download
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/adl-cache/models
+          key: model-${{ steps.vars.outputs.hf_file_sha256 }}-v1
+
+      - name: Build llama.cpp (KleidiAI)
+        continue-on-error: true
+        timeout-minutes: 12
+        run: bash scripts/lib/build_llamacpp.sh
+
+      - name: Download GGUF model
+        continue-on-error: true
+        timeout-minutes: 5
+        run: bash scripts/lib/fetch_model.sh
+
+      - name: Build kernels
+        continue-on-error: true
+        timeout-minutes: 5
+        run: bash scripts/lib/build_kernels.sh
+
+      - name: Capture hardware features
+        continue-on-error: true
+        timeout-minutes: 2
+        run: bash scripts/lib/capture_hw_features.sh
+
+      - name: Run correctness tests
+        continue-on-error: true
+        timeout-minutes: 5
+        run: bash scripts/lib/run_correctness_tests.sh
+
+      - name: Verify dispatch (thread sweep) — Finding 2 (SVE unreachable at 128-bit)
+        continue-on-error: true
+        timeout-minutes: 10
+        run: bash scripts/lib/verify_dispatch.sh
+
+      - name: Run reduced bench
+        continue-on-error: true
+        timeout-minutes: 10
+        run: bash scripts/lib/run_bench.sh
+
+      - name: Emit ledger
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 2
+        run: bash scripts/lib/emit_ledger.sh
+
+      - name: Write ledger to job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          if [[ -f results/LEDGER.md ]]; then
+            cat results/LEDGER.md >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "no results/LEDGER.md produced this run (likely an early kill — see job header re: known OOM incident on this runner)" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results/ artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-dispatch-ledger-results-spark-aarch64
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30

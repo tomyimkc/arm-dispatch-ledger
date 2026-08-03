@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Build/cache artifacts. All build+download state for the local reproduction
+# path lives under $CACHE_DIR (default $TMPDIR/arm-dispatch-ledger-cache),
+# outside this tree — see scripts/common.sh. The one in-tree build dir this
+# repo does produce locally is kernels/build/, which is deliberately not
+# committed (regenerate with the cmake commands in kernels/CMakeLists.txt's
+# header / results/SUMMARY.md).
+kernels/build/
+build/
+
+# Python bytecode caches (tools/bench.py, tools/plot_results.py, etc.)
+__pycache__/
+*.pyc
+
+# Editor/OS noise
+.DS_Store

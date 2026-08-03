@@ -1,0 +1,8 @@
+1785795348	build_llamacpp	OK	reusing cached build at /tmp/llama.cpp/build/bin/llama-cli / /tmp/llama.cpp/build/bin/llama-bench (stamp matched, set FORCE=1 to rebuild)
+1785795348	fetch_model	OK	reusing /tmp/ggufs/q05.gguf (sha256 verified, set FORCE=1 to re-download)
+1785795425	build_kernels	OK	kernels/CMakeLists.txt build succeeded
+1785795426	capture_hw_features	OK	wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/hw-features-Darwin-arm64.txt
+1785795437	correctness_tests	OK	all discovered correctness test suites passed
+1785796016	verify_dispatch	OK	wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/dispatch-ledger-Darwin-arm64.json (log: /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/logs/verify_dispatch.log)
+1785796083	run_bench	OK	bench completed, results in /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/bench (log: /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/logs/run_bench.log)
+1785796084	emit_ledger	OK	wrote fallback ledger to /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/LEDGER.md

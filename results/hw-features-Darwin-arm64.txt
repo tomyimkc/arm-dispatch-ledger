@@ -1,0 +1,30 @@
+# Hardware feature capture
+captured_at_utc: 2026-08-03T22:17:05Z
+uname -a: Darwin TomdeMacBook-Pro.local 27.0.0 Darwin Kernel Version 27.0.0: Mon Jun 29 21:25:02 PDT 2026; root:xnu-13432.0.50.501.3~1/RELEASE_ARM64_T6041 arm64
+nproc: 16
+
+## sysctl (Apple Silicon feature flags)
+cpu.brand_string: Apple M4 Max
+hw.optional.arm.FEAT_SME: 1
+hw.optional.arm.FEAT_SME2: 1
+hw.optional.arm.FEAT_SME_F64F64: 1
+hw.optional.arm.FEAT_SME_I16I64: 1
+hw.optional.arm.sme_max_svl_b: 64
+hw.optional.arm.FEAT_SVE: absent
+hw.optional.arm.FEAT_I8MM: 1
+hw.optional.arm.FEAT_BF16: 1
+hw.optional.arm.FEAT_DotProd: 1
+
+## llama-cli backend-selection banner
+0.00.000.869 I cmn  common_param: system_info: n_threads = 1 (n_threads_batch = 1) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 | 
+0.00.091.783 I kleidiai: primary q4 kernel feature SME2
+0.00.091.784 I kleidiai: primary q8 kernel feature SME2
+0.00.091.784 I kleidiai: primary f32 kernel feature SME2
+0.00.091.784 I kleidiai: SME2 enabled (runtime-detected SME cores=2)
+0.00.094.524 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead
+0.00.094.560 I load_tensors: CPU_KLEIDIAI model buffer size =     0.00 MiB
+0.00.096.742 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |
+0.00.195.660 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead
+0.00.203.384 I load_tensors: CPU_KLEIDIAI model buffer size =   633.02 MiB
+0.00.606.953 W kleidiai: no kernel for tensor type q4_1, not accelerated by KleidiAI (kernels available for Q4_0 and Q8_0)
+0.00.885.341 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |

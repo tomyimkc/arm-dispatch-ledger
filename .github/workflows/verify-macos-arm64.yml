@@ -1,0 +1,143 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# verify-macos-arm64.yml — the SME2 lane.
+#
+# Runs on a self-hosted Apple Silicon Mac (Mac Studio) — the only lane that
+# can demonstrate Finding 1 (KleidiAI's SME2 kernels are silently
+# thread-gated on Apple Silicon: dispatched at -t 1 / -t 2, silently
+# NEON-fallback at -t 4 / -t 8, on an M4-class chip) end to end, because
+# that requires real Apple SME2 hardware and lldb.
+#
+# SECURITY: this workflow deliberately does NOT trigger on `pull_request` or
+# `pull_request_target`. This runs on a physical, self-hosted machine with
+# real filesystem/network access; a workflow triggered by a fork's PR would
+# let an untrusted contributor execute arbitrary code on that machine before
+# any human review. Triggers are limited to:
+#   - push to `main` only (i.e. after a PR has already been reviewed and
+#     merged by a human with write access), and
+#   - workflow_dispatch (manual, requires at least "write" collaborator
+#     permission on this repository to invoke).
+# Never add `pull_request` / `pull_request_target` to this file.
+
+name: verify-macos-arm64
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  # Only one machine runs this lane; queue overlapping runs rather than
+  # cancelling a possibly-mid-benchmark run out from under itself.
+  group: verify-macos-arm64
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Build, verify dispatch, bench (Apple Silicon SME2, self-hosted)
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required tools are present
+        # No package manager is invoked here (unlike verify-free-arm64.yml's
+        # apt-get step) — this is someone's physical Mac, not an ephemeral
+        # hosted runner, so we don't assume permission to install system
+        # packages on it. If a tool is missing, fail loudly with the exact
+        # thing to install rather than silently sudo-installing.
+        run: |
+          missing=0
+          for tool in git cmake curl python3 clang lldb; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::error::required tool '$tool' not found on this runner's PATH"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -eq 1 ]]; then
+            echo "Install missing tools (e.g. 'xcode-select --install' for clang/lldb, 'brew install cmake') and re-run." >&2
+            exit 1
+          fi
+
+      - name: Compute cache keys and paths
+        id: vars
+        run: |
+          # CACHE_DIR is exported via $GITHUB_ENV (so every later step in
+          # this job sees it), rather than a job-level `env:` block, because
+          # the `runner` context (needed for $RUNNER_TEMP) is not available
+          # inside an `env:` mapping at all — workflow- or job-level — only
+          # inside `run:`/`with:` steps. Confirmed with
+          # `actionlint .github/workflows/*.yml`, which flagged the
+          # job-level `env:` approach tried first.
+          echo "CACHE_DIR=${RUNNER_TEMP}/adl-cache" >>"$GITHUB_ENV"
+          source scripts/common.sh
+          echo "llama_cpp_ref=${LLAMA_CPP_REF}" >>"$GITHUB_OUTPUT"
+          echo "hf_file_sha256=${HF_FILE_SHA256}" >>"$GITHUB_OUTPUT"
+
+      - name: Cache llama.cpp build
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/adl-cache/llama.cpp
+          key: llamacpp-${{ runner.os }}-${{ runner.arch }}-${{ steps.vars.outputs.llama_cpp_ref }}-kleidiai-v1
+
+      - name: Cache model download
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/adl-cache/models
+          key: model-${{ steps.vars.outputs.hf_file_sha256 }}-v1
+
+      - name: Build llama.cpp (KleidiAI)
+        run: bash scripts/lib/build_llamacpp.sh
+
+      - name: Download GGUF model
+        run: bash scripts/lib/fetch_model.sh
+
+      - name: Build kernels
+        run: bash scripts/lib/build_kernels.sh
+
+      - name: Capture hardware features
+        run: bash scripts/lib/capture_hw_features.sh
+
+      - name: Run correctness tests
+        run: bash scripts/lib/run_correctness_tests.sh
+
+      - name: Verify dispatch (thread sweep) — Finding 1 demonstration
+        # This is the step that produces Finding 1's hallmark result: real
+        # SME2 dispatch at low thread counts, silent NEON fallback at
+        # thread counts above sme_thread_cap. Left NON-continue-on-error
+        # here (unlike the free-arm64 lane's Neoverse-N2/SVE case) because
+        # on this hardware a verifier tool crash would mean this lane's one
+        # unique contribution silently produced nothing -- that should be
+        # visible as a failed step, not swallowed. (Verdict content itself
+        # never affects verify_dispatch.py's exit status: see the comment
+        # in scripts/lib/verify_dispatch.sh — we do not pass --assert.)
+        run: bash scripts/lib/verify_dispatch.sh
+
+      - name: Run reduced bench
+        run: bash scripts/lib/run_bench.sh
+
+      - name: Emit ledger
+        if: always()
+        run: bash scripts/lib/emit_ledger.sh
+
+      - name: Write ledger to job summary
+        if: always()
+        run: |
+          if [[ -f results/LEDGER.md ]]; then
+            cat results/LEDGER.md >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "no results/LEDGER.md produced this run" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results/ artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-dispatch-ledger-results-macos-arm64
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,940 @@
+{
+  "meta": {
+    "platform": "apple-m4-max",
+    "cpu_brand": "Apple M4 Max",
+    "os": "Darwin 27.0.0",
+    "generated_at": "2026-08-03T22:30:54.663025+00:00",
+    "llama_bin_dir": "/tmp/llama.cpp/build/bin",
+    "model_q4_0": "/tmp/ggufs/q05.gguf",
+    "model_q8_0": null,
+    "threads_swept": [
+      1,
+      2,
+      8,
+      16
+    ],
+    "sme_modes_swept": [
+      "on",
+      "off"
+    ],
+    "phases_swept": {
+      "decode": [
+        0,
+        32
+      ],
+      "prefill_short": [
+        64,
+        0
+      ],
+      "prefill_long": [
+        256,
+        0
+      ]
+    },
+    "reps": 5,
+    "thermal": {
+      "before": {
+        "source": "pmset -g therm",
+        "output": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+      },
+      "after": {
+        "source": "pmset -g therm",
+        "output": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+      }
+    },
+    "protocol": "see tools/protocol.md",
+    "candidateOnly": true,
+    "canClaimAGI": false,
+    "sweep_wall_seconds": 99.9
+  },
+  "rows": [
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 1,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 208.942,
+        "stddev_ts": 2.8660765342188643,
+        "min_ts": 203.549,
+        "max_ts": 210.193,
+        "samples_ts": [
+          210.193,
+          209.44,
+          208.942,
+          203.549,
+          205.462
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 1,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 149.916,
+        "stddev_ts": 4.299699152266353,
+        "min_ts": 146.108,
+        "max_ts": 157.798,
+        "samples_ts": [
+          157.798,
+          150.211,
+          149.916,
+          149.424,
+          146.108
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 2,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 327.576,
+        "stddev_ts": 4.560626305673375,
+        "min_ts": 318.225,
+        "max_ts": 329.896,
+        "samples_ts": [
+          327.576,
+          318.225,
+          329.896,
+          324.613,
+          327.942
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 2,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 266.359,
+        "stddev_ts": 6.437178287106852,
+        "min_ts": 255.192,
+        "max_ts": 272.943,
+        "samples_ts": [
+          272.943,
+          267.331,
+          266.359,
+          265.328,
+          255.192
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 8,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 154.646,
+        "stddev_ts": 1.788074578981534,
+        "min_ts": 153.044,
+        "max_ts": 156.743,
+        "samples_ts": [
+          154.646,
+          156.723,
+          153.3,
+          156.743,
+          153.044
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 8,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 155.317,
+        "stddev_ts": 0.8262980697060763,
+        "min_ts": 154.044,
+        "max_ts": 155.923,
+        "samples_ts": [
+          155.923,
+          154.044,
+          155.634,
+          154.312,
+          155.317
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 16,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 34.8699,
+        "stddev_ts": 6.617016969375248,
+        "min_ts": 29.7765,
+        "max_ts": 44.635,
+        "samples_ts": [
+          29.7765,
+          30.3268,
+          41.3445,
+          34.8699,
+          44.635
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 16,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 28.704,
+        "stddev_ts": 7.850543838295536,
+        "min_ts": 21.8585,
+        "max_ts": 42.9435,
+        "samples_ts": [
+          26.7134,
+          30.5987,
+          28.704,
+          21.8585,
+          42.9435
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 1,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 1,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 2,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 2,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 8,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 8,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 16,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "decode",
+      "n_prompt": 0,
+      "n_gen": 32,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 16,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 1,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 903.335,
+        "stddev_ts": 5.581128407410116,
+        "min_ts": 892.178,
+        "max_ts": 906.566,
+        "samples_ts": [
+          903.335,
+          906.566,
+          901.563,
+          892.178,
+          904.455
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 1,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 422.022,
+        "stddev_ts": 8.020711084436337,
+        "min_ts": 420.444,
+        "max_ts": 438.772,
+        "samples_ts": [
+          438.772,
+          431.945,
+          421.849,
+          422.022,
+          420.444
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 2,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 1579.04,
+        "stddev_ts": 8.446136986812357,
+        "min_ts": 1565.48,
+        "max_ts": 1584.95,
+        "samples_ts": [
+          1584.95,
+          1579.04,
+          1579.35,
+          1565.48,
+          1567.21
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 2,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 806.367,
+        "stddev_ts": 17.312234422511725,
+        "min_ts": 803.614,
+        "max_ts": 844.158,
+        "samples_ts": [
+          844.158,
+          805.546,
+          806.367,
+          806.619,
+          803.614
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 8,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 2135.98,
+        "stddev_ts": 91.87367615372749,
+        "min_ts": 1998.19,
+        "max_ts": 2227.93,
+        "samples_ts": [
+          2212.86,
+          2135.98,
+          2227.93,
+          1998.19,
+          2115.18
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 8,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 2188.37,
+        "stddev_ts": 60.991073773134985,
+        "min_ts": 2092.65,
+        "max_ts": 2262.75,
+        "samples_ts": [
+          2202.41,
+          2188.37,
+          2262.75,
+          2092.65,
+          2185.35
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 16,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 888.934,
+        "stddev_ts": 185.1341702015055,
+        "min_ts": 724.922,
+        "max_ts": 1175.91,
+        "samples_ts": [
+          1175.91,
+          962.343,
+          737.73,
+          724.922,
+          888.934
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 16,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 996.681,
+        "stddev_ts": 366.7435311655817,
+        "min_ts": 366.356,
+        "max_ts": 1147.22,
+        "samples_ts": [
+          472.21,
+          1090.39,
+          996.681,
+          366.356,
+          1147.22
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 1,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 1,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 2,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 2,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 8,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 8,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 16,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_short",
+      "n_prompt": 64,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 16,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 1,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 896.237,
+        "stddev_ts": 4.660480500978426,
+        "min_ts": 889.206,
+        "max_ts": 901.768,
+        "samples_ts": [
+          889.206,
+          901.768,
+          894.358,
+          898.171,
+          896.237
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 1,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 415.112,
+        "stddev_ts": 5.95185210669755,
+        "min_ts": 412.379,
+        "max_ts": 427.028,
+        "samples_ts": [
+          427.028,
+          418.087,
+          415.112,
+          413.109,
+          412.379
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 2,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 1629.13,
+        "stddev_ts": 8.59685116772412,
+        "min_ts": 1616.73,
+        "max_ts": 1640.04,
+        "samples_ts": [
+          1640.04,
+          1629.13,
+          1616.73,
+          1624.9,
+          1631.75
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 2,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 805.155,
+        "stddev_ts": 13.141848930040236,
+        "min_ts": 803.342,
+        "max_ts": 834.756,
+        "samples_ts": [
+          834.756,
+          810.045,
+          805.08,
+          803.342,
+          805.155
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 8,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 1830.08,
+        "stddev_ts": 203.5123340733923,
+        "min_ts": 1762.06,
+        "max_ts": 2270.76,
+        "samples_ts": [
+          1830.08,
+          1945.03,
+          1762.06,
+          2270.76,
+          1824.16
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 8,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 2676.4,
+        "stddev_ts": 30.627335502782547,
+        "min_ts": 2661.14,
+        "max_ts": 2727.59,
+        "samples_ts": [
+          2715.96,
+          2661.14,
+          2676.4,
+          2664.48,
+          2727.59
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 16,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 445.277,
+        "stddev_ts": 100.44726141861707,
+        "min_ts": 255.46,
+        "max_ts": 526.365,
+        "samples_ts": [
+          445.277,
+          255.46,
+          526.365,
+          454.349,
+          406.514
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q4_0",
+      "model": "/tmp/ggufs/q05.gguf",
+      "threads": 16,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 1514.13,
+        "stddev_ts": 198.84947782179356,
+        "min_ts": 1297.38,
+        "max_ts": 1733.12,
+        "samples_ts": [
+          1383.93,
+          1733.06,
+          1733.12,
+          1297.38,
+          1514.13
+        ]
+      },
+      "dispatch": {
+        "verified": false,
+        "reason": "--skip-dispatch-verify passed"
+      }
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 1,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 1,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 2,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 2,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 8,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 8,
+      "sme_mode": "off",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 16,
+      "sme_mode": "on",
+      "not_available": true
+    },
+    {
+      "phase": "prefill_long",
+      "n_prompt": 256,
+      "n_gen": 0,
+      "quant": "Q8_0",
+      "model": null,
+      "threads": 16,
+      "sme_mode": "off",
+      "not_available": true
+    }
+  ]
+}
