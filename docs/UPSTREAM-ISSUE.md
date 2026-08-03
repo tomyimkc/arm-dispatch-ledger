@@ -28,7 +28,7 @@ KleidiAI: SME2 dispatch is silently thread-gated on Apple Silicon (banner still 
 | Hardware (measured directly) | Apple M4 Max, macOS 27, 16 cores (12P+4E), Apple clang 21 |
 | ISA (measured via `sysctl`) | `FEAT_SME=1`, `FEAT_SME2=1`, `sme_max_svl_b=64` (512-bit SVL), `FEAT_I8MM=1`, `FEAT_BF16=1`, `FEAT_DotProd=1`; **`FEAT_SVE` absent** (Apple ships SME2 without non-streaming SVE) |
 | Model | `Qwen2.5-0.5B-Instruct-Q4_0.gguf` (Apache-2.0) |
-| Hardware for Finding 2 (architectural, **not yet run on this session's own harness**) | NVIDIA DGX Spark, 10x Cortex-X925 (Armv9.2, SVE2 @ 128-bit per Arm's published core spec), no SME |
+| Hardware for Finding 2 (**measured**) | GitHub-hosted `ubuntu-24.04-arm` runner — Neoverse-N2, 4 cores, SVE2 @ 128-bit, i8mm, bf16, no SME. Free and re-runnable by anyone; CI run [`30862916023`](https://github.com/tomyimkc/arm-dispatch-ledger/actions/runs/30862916023) |
 
 ## Summary
 
@@ -198,11 +198,29 @@ X925 (DGX Spark) and Neoverse-N2 (GitHub's free `ubuntu-24.04-arm` runner) — f
 `==` check and gets `CPU_FEATURE_NONE` for SVE, silently, with no log line. `ggml_cpu_has_sve()`
 can be true while `CPU_FEATURE_SVE` in this context is never set.
 
-We have **not yet run our own harness's dispatch verifier against a 256-bit-SVE2 core**
-to check for a genuine positive case, so we cannot rule out that this exact-width
-requirement is intentional (e.g. the SVE microkernels may be hand-tuned for a specific
-vector length and are not vector-length-agnostic). We would appreciate the
-maintainers' read on that — see the question in "Suggested fix" below.
+**Measured, not just inferred.** We confirmed this end to end on GitHub's own free
+`ubuntu-24.04-arm` runner (Neoverse-N2, 4 cores), so it reproduces at zero cost. From CI
+run [`30862916023`](https://github.com/tomyimkc/arm-dispatch-ledger/actions/runs/30862916023):
+
+- `/proc/cpuinfo` advertises `sve sve2 sveaes svebitperm svesha3 svesm4 svei8mm svebf16
+  i8mm bf16` — the hardware genuinely has SVE2.
+- A static scan of the built `libggml-cpu.so` shows the SVE kernels are compiled in:
+  `kai_symbols_by_family = {dotprod: 6, i8mm: 2, sve: 2}`, plus 26,629 SVE z-register
+  operands in the disassembly.
+- The load-time log nonetheless reports `primary q4 kernel feature I8MM` and `primary q8
+  kernel feature I8MM` — never SVE.
+- Debugger breakpoints on every `kai_run_matmul*` entry point confirm execution is
+  `i8mm` / `dotprod`; the SVE family is never entered.
+
+So the SVE kernels ship, the silicon supports SVE2, and the dispatcher still cannot
+select them.
+
+We have **not** run our verifier against a 256-bit-SVE2 core to observe a genuine
+positive case, so we cannot rule out that the exact-width requirement is intentional —
+the SVE microkernels may be hand-tuned for one vector length rather than being
+vector-length-agnostic. We would value the maintainers' read on that; see the question
+in "Suggested fix" below. If it is intentional, a single log line saying so would still
+have saved us a debugger session.
 
 ## Suggested fix
 
