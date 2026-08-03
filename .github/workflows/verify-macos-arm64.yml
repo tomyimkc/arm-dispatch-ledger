@@ -21,9 +21,21 @@
 
 name: verify-macos-arm64
 
+# workflow_dispatch ONLY, deliberately.
+#
+# The Apple Silicon runner that serves this lane is registered to a different
+# repository, so this repo currently has no [self-hosted, macOS, ARM64] runner bound to
+# it. On `push` this job therefore queued forever and showed up as a permanently stuck
+# run — which, to anyone browsing the Actions tab, reads as a broken project.
+#
+# The canonical Apple Silicon SME2 evidence in this repo was produced by running these
+# same scripts/ entrypoints locally on an M4 Max; see results/SUMMARY.md and
+# results/dispatch-ledger-darwin-arm64.json. This lane exists so that anyone WITH a
+# self-hosted Apple Silicon runner can reproduce it in CI, and stays manual until a
+# runner is actually registered against this repository.
+#
+# verify-free-arm64.yml is the lane judges and contributors can run at zero cost.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 permissions:

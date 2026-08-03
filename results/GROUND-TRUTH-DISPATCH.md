@@ -84,7 +84,7 @@ Throughout, `system_info:` prints `SME = 1 | SME2 = 1 | KLEIDIAI = 1` and the lo
 `kleidiai: primary q4 kernel feature SME2` — **in every one of the zero-dispatch rows above.**
 Both are compile-time / selection-time signals. Neither reflects dispatch.
 
-## Second finding — the SVE width gate (not yet measured on hardware)
+## Second finding — the SVE width gate — **CONFIRMED ON HARDWARE 2026-08-04**
 
 Same file, ~L209:
 
@@ -92,12 +92,53 @@ Same file, ~L209:
 ((ggml_cpu_has_sve() && ggml_cpu_get_sve_cnt() == QK8_0) ? CPU_FEATURE_SVE : CPU_FEATURE_NONE)
 ```
 
-`QK8_0 == 32` bytes == 256-bit. The DGX Spark's Cortex-X925 implements SVE2 at **128-bit**, so
-`CPU_FEATURE_SVE` can never be set there and the SVE kernel family is unreachable — despite the core
-genuinely having SVE2, i8mm and bf16.
+`QK8_0 == 32` bytes == 256-bit. Any core implementing SVE2 at 128-bit can never set
+`CPU_FEATURE_SVE`, so the SVE kernel family is unreachable there — despite the core genuinely
+having SVE2, i8mm and bf16.
 
-**Status: read from source, NOT yet confirmed on the Spark runner.** Must be labelled
-`[not yet measured on hardware]` everywhere until the Spark CI lane actually runs.
+**Status upgraded from "derived from source" to MEASURED.** Confirmed on GitHub's free
+`ubuntu-24.04-arm` runner (**Neoverse-N2**, 4 cores), CI run
+[`30862916023`](https://github.com/tomyimkc/arm-dispatch-ledger/actions/runs/30862916023) — a
+platform *any judge can re-run at zero cost*, which is stronger evidence than the DGX Spark would
+have been.
+
+Evidence chain from that run:
+- `/proc/cpuinfo` Features advertises **`sve sve2 sveaes svebitperm svesha3 svesm4 svei8mm svebf16
+  i8mm bf16`** — the hardware genuinely has SVE2.
+- L1 static scan of `libggml-cpu.so` finds SVE kernels present and compiled in:
+  `kai_symbols_by_family = {dotprod: 6, i8mm: 2, sve: 2}`, plus 26,629 SVE z-register operands.
+- L2 selection nonetheless reports `primary q4/q8 kernel feature = I8MM`, **never SVE**.
+- L3 dispatch confirms execution is `i8mm` / `dotprod`; the SVE family is never entered.
+
+So on Neoverse-N2 the SVE kernels are compiled in, the silicon supports SVE2, and the dispatcher
+still cannot select them — exactly as the `== QK8_0` gate predicts.
+
+The DGX Spark (Cortex-X925, also 128-bit SVE2) is predicted to behave identically but **has not been
+run**: its self-hosted runner is registered to a different repository. Keep that specific claim
+labelled `[not measured on Spark]`.
+
+## Third observation — Neoverse-N2 decode also advertises one kernel and runs another
+
+From the same CI run, `dispatch-ledger-Linux-aarch64.json`:
+
+| threads | workload | advertised (L2) | executed (L3) | hits |
+|---:|---|---|---|---:|
+| 1 | decode_short | I8MM | **dotprod** | 1,014 |
+| 2 | decode_short | I8MM | **dotprod** | 8,112 |
+| 4 | decode_short | I8MM | **dotprod** | 16,224 |
+| 1 | prefill_long | I8MM | i8mm | 672 |
+| 2 | prefill_long | I8MM | i8mm | 5,376 |
+| 4 | prefill_long | I8MM | i8mm | 10,752 |
+
+Decode advertises I8MM and executes dotprod; prefill advertises I8MM and executes I8MM. This is the
+**same class of advertised-vs-executed divergence as Finding 1, on completely different silicon and
+a completely different kernel family** — evidence that the gap between what KleidiAI reports and
+what it runs is systemic, not an Apple-specific quirk.
+
+This is an *observation*, not yet a root-caused finding: the likely mechanism is the GEMV-vs-GEMM
+kernel split (decode is `ne11 == 1`, i.e. a GEMV, and the dotprod GEMV kernel may simply be the
+selected variant for that shape) rather than a bug. **Do not present it as a defect until that is
+read out of the source.** It is reported here because the ledger measured it.
 
 ## Methodology caveat — do not overstate the hit counts
 
