@@ -25,14 +25,27 @@ architecturally unreachable on every current 128-bit-SVE2 Armv9 core (Cortex-X92
 Neoverse-N2) — including the free `ubuntu-24.04-arm` GitHub-hosted runner and the DGX
 Spark.
 
-We then went one step further than diagnosis: we **wrote and measured an actual patch**
-(`patches/0001-kleidiai-phase-aware-dispatch.patch`) that changes the dispatch decision,
-proved at the `lldb` symbol level that it does what it says, and then measured its real
-throughput effect against the strongest baselines already available in this repo —
-including the honest, unflattering finding that the patch does **not** raise the
-performance ceiling; the one clean win it produces is narrower than "the fix," and we
-report that plainly rather than rounding it up. That reconciliation is written up in
-full in `results/OPTIMIZATION.md` and summarized in Functionality/Output below.
+That diagnosis led directly to an actionable, user-facing discovery: on an Apple M4 Max,
+today, with **zero code changes**, splitting the per-phase thread count (`-t 2` for
+decode, `-t 8` for prefill) is **3.43× faster for decode and 1.79× faster for prefill**
+than `llama.cpp`'s own default thread count — measured on a quiet machine, round-robin
+interleaved against the baseline specifically so external contention cannot manufacture
+the number (`results/REMEASURE-2026-08-04-QUIET.md`). Nothing in `llama.cpp` currently
+tells a user this: the banner claims SME2 is already in use at the default thread count,
+while the finding above shows it structurally is not, for decode.
+
+We then went one step further than diagnosis and tuning: we **wrote and measured an
+actual patch** (`patches/0001-kleidiai-phase-aware-dispatch.patch`) that changes the
+dispatch decision itself, on the hypothesis that the thread-cap exclusion documented
+above was silently costing decode throughput. We proved at the `lldb` symbol level that
+the patch does exactly what it says — SME2 kernel calls go from zero to thousands with
+the flag on, same binary, same workload — and then measured its real throughput effect
+against the tuned baseline above. The honest result: the patch does **not** help. At
+`llama.cpp`'s own default thread count it makes decode **~12% slower**; at the tuned
+thread count it is a statistical tie. We report that plainly, as a measured negative
+result, rather than rounding it up or quietly dropping the patch. That reconciliation is
+written up in full in `results/REMEASURE-2026-08-04-QUIET.md` and summarized in
+Functionality/Output below.
 
 Both dispatch gaps are compile-time-vs-dispatch-time bugs in disguise: the
 *availability* signal (what the binary was built with) and the *selection* signal (what
@@ -47,35 +60,40 @@ number and stop. It (1) found a real, previously-undocumented bug class in a
 widely-deployed open-source inference engine, on real Arm hardware, with a debugger —
 not a guess; (2) turned the finding into a reusable, judge-reproducible verification
 tool (a Python harness *and* an MCP server, so any agent can ask "did this actually
-dispatch?" about its own inference calls); (3) measured the actual, honest performance
-consequence — including the unflattering half of the answer, where plain NEON at its
-own best thread count *beats* SME2 for prefill on this model, which a
-flattering-numbers-only submission would have hidden; (4) proved the underlying silicon
-is not the limiter by hand-writing working SME2 ACLE kernels from scratch, bit-exact
-against a scalar reference, while being explicit that Apple's own Accelerate library is
-still roughly 3-18x faster than our hand-written kernel, depending on matrix size (no
-strawman "beats naive NEON by 19x" claim survives this repo); (5) **wrote, applied, and
-measured an actual opt-in optimization patch** against the diagnosed bug — not just a
-proposal — and reported its real effect exactly as measured: a genuine, symbol-level-proven
-dispatch change and a real +57.3% decode win at llama.cpp's default configuration, paired
-with the equally real finding that it does not beat the hand-tuned `-t 2` config that was
-already achievable with zero code changes, stated with the same rigor as the win; and
-(6) is filing the finding upstream and has a ready-to-open follow-up PR
-(`docs/UPSTREAM-PR.md`) offering the patch, because a one-line warning is the smallest
-uncontroversial fix and the dispatch-change half is explicitly offered as a discussion,
-not a demand — the Impact score should reward shipping the fix path and being honest
-about its limits, not just the finding.
+dispatch?" about its own inference calls); (3) turned that diagnosis into a genuine,
+user-facing throughput win **without writing a line of code**: an interleaved,
+contention-controlled re-measurement shows `-t 2`/`-t 8` per-phase tuning is **3.43×
+faster for decode and 1.79× faster for prefill** than `llama.cpp`'s own default, today,
+with flags it already ships — a real optimization, not a proposal; (4) proved the
+underlying silicon is not the limiter by hand-writing working SME2 ACLE kernels from
+scratch, bit-exact against a scalar reference, while being explicit that Apple's own
+Accelerate library is still roughly 3-18x faster than our hand-written kernel, depending
+on matrix size (no strawman "beats naive NEON by 19x" claim survives this repo);
+(5) **wrote, applied, and measured an actual opt-in dispatch patch** against the
+diagnosed bug — not just a proposal — proved at the symbol level that it does exactly
+what it claims (zero SME2 kernel calls to thousands, same binary, same workload), and
+then reported its real throughput effect honestly: it does **not** improve performance —
+a real ~12% regression at the default thread count, a statistical tie at the tuned
+thread count — and we say so plainly instead of quietly dropping the negative result;
+and (6) is filing the finding upstream and has a ready-to-open follow-up PR
+(`docs/UPSTREAM-PR.md`) that separates the two pieces honestly: a small, uncontroversial
+warning proposed for merge, and the dispatch-patch experiment offered purely as a
+measured negative result, explicitly not proposed for merge — the Impact score should
+reward shipping a real, reproducible optimization and being honest about a patch that
+didn't pan out, not rounding a regression up into a win.
 
 Every number in this repo was produced by code in this repo, run for real, on
 real Arm hardware, in this session — see `results/SUMMARY.md` for the diagnosis-phase
-measurement log and `results/OPTIMIZATION.md` for the optimization-phase measurement
-log, both including every caveat.
+measurement log and `results/REMEASURE-2026-08-04-QUIET.md` for the authoritative,
+interleaved optimization-phase measurement log (superseding the earlier, contended
+`results/OPTIMIZATION.md` run), both including every caveat.
 
 ## Functionality / Output
 
-**What the final output *is*: a diagnosis tool, an actual optimization patch built and
-measured against that diagnosis, a verifier that checks both the diagnosis and the
-patch the same way, an MCP tool that exposes all of it to an agent, and a public
+**What the final output *is*: a diagnosis tool, a real zero-code-change optimization
+discovered from that diagnosis, an actual dispatch patch built and measured against the
+same diagnosis (reported as a negative result), a verifier that checks the diagnosis and
+the patch the same way, an MCP tool that exposes all of it to an agent, and a public
 dashboard that publishes the evidence.** Seven artifacts, all reusable independent of
 this specific bug:
 
@@ -95,30 +113,35 @@ this specific bug:
    this CI-gateable (non-zero exit on a real silent fallback). This same tool, unmodified,
    is what verified our own patch below — it was not special-cased to be flattering to
    our fix.
-3. **`patches/0001-kleidiai-phase-aware-dispatch.patch`** — **the actual optimization.**
-   An opt-in (`GGML_KLEIDIAI_PHASE_AWARE=1`, default off), 56-line patch to
+3. **`patches/0001-kleidiai-phase-aware-dispatch.patch`** — **an actual dispatch
+   experiment, reported as a measured negative result.** An opt-in
+   (`GGML_KLEIDIAI_PHASE_AWARE=1`, default off), 56-line patch to
    `ggml-cpu/kleidiai/kleidiai.cpp` that lets decode (a GEMV, `ne11 == 1`) enter the
    existing SME2+NEON hybrid dispatch path above the chip's thread cap instead of
    collapsing to NEON-only, plus a one-shot warning naming the knob when it doesn't.
    `tools/verify_dispatch.py` proves the dispatch change is real at the symbol level
    (decode at `-t 4`: 0 SME2 kernel calls with the flag off, 3,072 with it on, same
-   binary). `tools/crossover.py` then measured its actual throughput effect against
-   the strongest available baselines and found a real, honest, **partial** result: a
-   genuine **+57.3%** decode win (45.5 → 71.6 tok/s) at llama.cpp's own default thread
-   count, automatically — but the patch does **not** beat, or even approach, the
-   pre-existing `-t 2` hand-tuned configuration (~305 tok/s, needs zero code changes),
-   so it narrows roughly 10% of the absolute gap to that ceiling and does not close it.
-   Full verdict, every table, every caveat: `results/OPTIMIZATION.md`. A ready-to-open
-   follow-up pull request offering this patch upstream, written with the same honesty
-   about its limits, is drafted at `docs/UPSTREAM-PR.md` (not opened, per this
-   project's working agreement).
+   binary) — but the interleaved throughput re-measurement
+   (`results/REMEASURE-2026-08-04-QUIET.md`) found the dispatch change does **not**
+   help: decode is **~12% slower** with the flag on at `llama.cpp`'s own default thread
+   count, and a statistical tie at the tuned thread count. We report that honestly
+   rather than dropping it, because it is useful information (the `ne11 < 128`
+   exclusion is not leaving throughput on the table on this chip) even though it is not
+   a performance win. A ready-to-open follow-up pull request offering only the
+   warning half for merge — and reporting the dispatch-bypass half purely as a measured
+   negative result, explicitly not proposed for merge — is drafted at
+   `docs/UPSTREAM-PR.md` (not opened, per this project's working agreement).
 4. **`tools/crossover.py`** — the dedicated per-phase-optimum harness
    (`tools/crossover.md` documents its methodology): pins the real llama.cpp default
    thread count by measurement (12 on this machine, not the assumed 16 — a small,
-   separate finding in its own right), the best split-phase config expressible today
-   with `-t`/`-tb`, and the theoretical best pairing that `GGML_KLEIDIAI_SME` being
-   process-global makes unreachable. This is the instrument that made the optimization
-   claim falsifiable rather than asserted.
+   separate finding in its own right), and the best split-phase config expressible
+   today with `-t`/`-tb`. This is the instrument that, re-run interleaved on a quiet
+   machine, produced this project's actual optimization result: **3.43× faster decode,
+   1.79× faster prefill**, today, with zero code changes
+   (`results/REMEASURE-2026-08-04-QUIET.md`) — and that made the claim falsifiable
+   rather than asserted, since the same harness caught the original, contention-inflated
+   version of this number as wrong and forced the re-measurement that produced the
+   honest figure.
 5. **`tools/bench.py`** — the throughput side: an interleaved,
    warmup-discarding, 5-reps-per-cell benchmark harness across thread counts × SME
    on/off × workload phase, reporting median/stddev/min/max (never a bare mean), that
@@ -174,7 +197,7 @@ submission as "already GREEN on GitHub's ubuntu-24.04-arm").
 
 This lane validates Finding 1's SME-thread-cap logic path and Finding 2 (the SVE
 256-bit gate, expected and asserted on Neoverse-N2's 128-bit SVE2) — it does **not**
-exercise the SME2-specific optimization patch, since Neoverse-N2 has no SME hardware.
+exercise the SME2-specific dispatch patch, since Neoverse-N2 has no SME hardware.
 See Step 3 below for validating the patch itself, which requires Apple Silicon (the
 only SME2 hardware this project has access to).
 
@@ -223,9 +246,9 @@ claude mcp add arm-dispatch-ledger -- python3 "$(pwd)/mcp/server.py"
 
 ### Step 2 — validate the per-phase optimum claim (`tools/crossover.py`)
 
-This is the harness that pins the exact numbers the optimization patch (Step 3) is
-measured against — run it first to reproduce the baseline this submission's
-optimization claim rests on, independent of the patch:
+This is the harness this submission's actual optimization claim rests on (the per-phase
+thread tuning, independent of the code patch), and it also pins the exact baseline the
+dispatch patch (Step 3) is measured against — run it first:
 
 ```bash
 python3 tools/crossover.py --threads 1,2,4,8,16 --sme-modes on,off --reps 5 \
@@ -234,13 +257,18 @@ python3 tools/crossover.py --threads 1,2,4,8,16 --sme-modes on,off --reps 5 \
 
 Compare your output against `results/crossover/crossover-apple-m4-max.md` — expect the
 same *qualitative* result (decode wants low threads + SME on, prefill wants more
-threads + SME off) even if your machine's absolute tok/s differ from ours.
+threads + SME off) even if your machine's absolute tok/s differ from ours. That
+committed file's own absolute numbers were later found to have been collected under
+heavy, unequal contention; `results/REMEASURE-2026-08-04-QUIET.md` is the authoritative
+source for this project's own measured decode/prefill optimum tok/s (3.43×/1.79× over
+`llama.cpp`'s default).
 
-### Step 3 — validate the optimization patch itself (Apple Silicon with SME2 only)
+### Step 3 — validate the dispatch patch experiment itself (Apple Silicon with SME2 only)
 
-This is the step that answers "does the optimization actually work, and does it
-actually help" — do not skip straight to trusting `results/OPTIMIZATION.md`; the same
-commands that produced it are reproducible here:
+This is the step that answers "does the patch's dispatch change actually help
+throughput" — the honest answer is no, and do not skip straight to trusting
+`results/REMEASURE-2026-08-04-QUIET.md`; the same commands that produced it are
+reproducible here:
 
 ```bash
 # Apply the patch to a fresh llama.cpp checkout at the pinned base commit
@@ -270,9 +298,11 @@ GGML_KLEIDIAI_PHASE_AWARE=1 python3 tools/crossover.py \
 ```
 
 Full methodology, every table, and the honest verdict this exact procedure produced on
-our own machine: `results/OPTIMIZATION.md`. Expect your dispatch proof (step 1) to
-match closely; expect your throughput numbers (step 2) to vary with machine load, but
-the *qualitative* verdict — real dispatch change, no ceiling-raising throughput win — to
+our own machine: `results/REMEASURE-2026-08-04-QUIET.md` (authoritative; supersedes the
+original, contended `results/OPTIMIZATION.md` run). Expect your dispatch proof (step 1)
+to match closely; expect your throughput numbers (step 2) to vary with machine load, but
+the *qualitative* verdict — real dispatch change, no throughput win: a real ~12%
+regression at the default thread count, a statistical tie at the tuned thread count — to
 reproduce.
 
 ### Zero-cost reproduction, restated
@@ -311,7 +341,7 @@ offering that patch back to the project it targets — contribution, not appropr
 - **Debugging runtime or compatibility issues** — the headline finding *is* a
   runtime-vs-compile-time debugging problem: the banner, the log, and the actual
   dispatched kernel disagreed, and untangling that required an `lldb` breakpoint
-  session, not just reading logs. Writing the optimization patch made this *worse*
+  session, not just reading logs. Writing the dispatch patch made this *worse*
   before it got better: proving the patch's own dispatch change was real (not just
   "should be real" by code inspection) required the identical `lldb` A/B methodology
   a second time — flag off had to reproduce the pre-patch `0/15936` hit count
@@ -329,9 +359,10 @@ offering that patch back to the project it targets — contribution, not appropr
   (Accelerate) and the honest reconciliation (SME2 wins decode, NEON wins prefill).
   This got harder, not easier, once we had an actual patch to evaluate: the honest
   answer for the patch's own effect turned out to be "real dispatch change, no
-  ceiling-raising throughput win" — a genuinely mixed result that took a dedicated
-  crossover harness (`tools/crossover.py`) and four separate measured configurations
-  to state precisely instead of rounding toward a cleaner story.
+  throughput win — in fact a real regression at the default thread count" — a
+  genuinely negative result that took a dedicated crossover harness
+  (`tools/crossover.py`), and later a fully interleaved re-measurement on a quiet
+  machine, to state precisely instead of rounding toward a cleaner story.
 - **Finding relevant examples or documentation** — the `sme_thread_cap` /
   `ne11 >= 128` hybrid-dispatch rule does not appear anywhere in llama.cpp's docs and
   returned nothing on web search; it had to be read directly out of
@@ -363,8 +394,8 @@ offering that patch back to the project it targets — contribution, not appropr
   `ubuntu-24.04-arm` runner was the practical answer, but discovering and wiring up all
   three lanes (including a still-open, unresolved OOM instability on the Spark runner)
   took real effort that a single more-available Arm cloud target would have avoided.
-  The same gap blocked broader validation of the optimization patch itself — we only
-  have one SME2-capable chip (M4 Max) to measure it on, and `docs/UPSTREAM-PR.md`
+  The same gap blocked broader validation of the dispatch patch experiment itself — we
+  only have one SME2-capable chip (M4 Max) to measure it on, and `docs/UPSTREAM-PR.md`
   says so explicitly rather than implying broader coverage than we have.
 
 ### Q3 — How likely are you to build on Arm again? (single-select)
@@ -380,17 +411,18 @@ patch against that harness removes most of the ramp-up cost for a next project.
 ### Q4 — How likely are you to continue this project? (single-select)
 
 **Very likely.** Concrete next steps already identified: (1) open the follow-up PR
-drafted in `docs/UPSTREAM-PR.md` against `ggml-org/llama.cpp`, offering the phase-aware
-patch and inviting the maintainers to redirect the approach — held back during the
-challenge window per this project's own no-external-PRs working agreement, not because
-it isn't ready to send; (2) get an independent, verified run of the SVE2 kernels, the
-dispatch verifier, and the optimization patch's dispatch proof on the DGX Spark and on
-GitHub's `ubuntu-24.04-arm` runner (both wired up in `.github/workflows/` but the patch
-itself is Apple-SME2-specific and has only been measured on one chip so far); (3) repeat
-the throughput reconciliation — and the patch's own before/after — at a larger model
-size, since the decode-wins/prefill-loses split measured here is plausibly
+drafted in `docs/UPSTREAM-PR.md` against `ggml-org/llama.cpp` — proposing the one-shot
+warning for merge, and reporting the phase-aware dispatch bypass as a measured negative
+result rather than proposing it — held back during the challenge window per this
+project's own no-external-PRs working agreement, not because it isn't ready to send;
+(2) get an independent, verified run of the SVE2 kernels, the dispatch verifier, and the
+dispatch patch's own symbol-level proof on the DGX Spark and on GitHub's
+`ubuntu-24.04-arm` runner (both wired up in `.github/workflows/` but the patch itself is
+Apple-SME2-specific and has only been measured on one chip so far); (3) repeat the
+throughput reconciliation — and the patch's own before/after — at a larger model size,
+since the decode-favors-SME/prefill-favors-NEON split measured here is plausibly
 compute-to-memory-ratio-dependent and may reverse on a bigger model, which would also
-change whether the patch's default-config win holds up.
+change whether the patch's default-thread-count regression holds up.
 
 ### Q5 — What's one thing Arm could improve? (free text)
 

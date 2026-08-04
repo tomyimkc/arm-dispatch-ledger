@@ -1,5 +1,15 @@
 # Arm Dispatch Ledger — measured results (Apple M4 Max)
 
+> **See also: [`results/REMEASURE-2026-08-04-QUIET.md`](REMEASURE-2026-08-04-QUIET.md).**
+> That file is the authoritative, quiet/interleaved re-measurement of the phase-aware
+> KleidiAI *patch* comparison reported in `results/OPTIMIZATION.md` (that comparison's
+> original "+57.3% decode" figure is retracted). The tables below are a **separate**
+> measurement (`tools/verify_dispatch.py` + `tools/bench.py`, unpatched baseline binary
+> only, SME on/off — no phase-aware patch involved) and are not themselves part of that
+> retraction; they carry the same general shared-machine-contention caveat as everything
+> else measured in this session, but no cross-run baseline-vs-patched comparison is made
+> on this page for the retraction to invalidate.
+
 All numbers on this page were produced by code in this repo, run for real on this
 machine, in this session, on 2026-08-03/04. Nothing here is invented or
 interpolated. Commands to reproduce every table are given inline. The tables in
@@ -136,6 +146,11 @@ Real measured tok/s, Q4_0 (Q8_0 not available — no such GGUF in this environme
 | 2 | 1629.1 +/- 8.6 | 805.2 +/- 13.1 | 2.02x |
 | 8 | 1830.1 +/- 203.5 | **2676.4 +/- 30.6** | 0.68x — NEON alone beats SME's own best cell by 1.46x |
 | 16 | 445.3 +/- 100.5 | 1514.1 +/- 198.9 (unstable) | NEON still clearly ahead, both degraded |
+
+*(Note: the stddev value `198.9` in this row is this section's own `tools/bench.py`
+measurement — unpatched binary, `prefill_long`, 16 threads, SME off — and is unrelated to
+the retracted `results/OPTIMIZATION.md` decode figure that happens to share the same
+digits. Not affected by the `REMEASURE-2026-08-04-QUIET.md` correction.)*
 
 Raw JSON/markdown: `results/bench/bench-apple-m4-max.json`, `results/bench/bench-apple-m4-max.md`.
 Figures: `results/bench/figures/*.png`.

@@ -9,18 +9,30 @@ The verifier (`tools/verify_dispatch.py`) is the *method* used throughout this a
 product; it ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch,
 a results dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
 
-**The optimization, measured on this repo's own hardware (Apple M4 Max, `tools/crossover.py`, n=5,
-interleaved, median ± stddev — full table below):** matching thread count to phase —
-`-t 2` for decode, `-tb 8` for prefill, both flags `llama.cpp` already ships — beats the default
-config by **4.4x on decode (45.5 → 198.9 tok/s) and 2.0x on prefill (1,145.0 → 2,257.5 tok/s),
-today, with zero code changes.** Nobody does this by default because of Finding 1 below: a
-hardcoded per-chip thread cap silently excludes decode from the fast kernel while the startup
-banner keeps claiming that kernel is in use. We also wrote and measured an opt-in patch
-(`patches/0001-kleidiai-phase-aware-dispatch.patch`) that recovers *part* of this gap automatically
-for a user who never touches a thread flag at all — **decode 45.5 → 71.6 tok/s, +57.3%, proven at
-the symbol level** — reported plainly alongside the honest limit: it does not beat hand-tuning and
-does not raise the ceiling. See "The optimization" section below for the full before/after table,
-the patch's mechanism, and the symbol-level dispatch proof.
+**The optimization, re-measured 2026-08-04 on this repo's own hardware (Apple M4 Max, `llama-bench
+-r 1`, n=7, round-robin interleaved against external load, median ± stdev — full table below):**
+matching thread count to phase — `-t 2` for decode, `-t 8`/`-tb 8` for prefill, both flags
+`llama.cpp` already ships — beats the default config by **3.43x on decode (93.6 → 321.0 tok/s) and
+1.79x on prefill (1,230.3 → 2,198.1 tok/s), today, with zero code changes.** Nobody does this by
+default because of Finding 1 below: a hardcoded per-chip thread cap silently excludes decode from
+the fast kernel while the startup banner keeps claiming that kernel is in use. We also wrote and
+measured an opt-in patch (`patches/0001-kleidiai-phase-aware-dispatch.patch`) meant to recover this
+gap automatically for a user who never touches a thread flag at all — the honest, re-measured
+result is that it does **not** help: at default thread count it is **~12% slower** (93.6 → 82.5
+tok/s), a real regression outside the noise, even though the dispatch change it makes is genuine
+and symbol-level proven. See "The optimization" section below for the full before/after table, the
+patch's mechanism, the symbol-level dispatch proof, and why the dispatch change doesn't translate
+into a throughput win.
+
+> **Correction (2026-08-04):** the figures above replace an earlier, wrong headline (4.4x decode,
+> and a "+57.3%" win for the patch). That original run measured the baseline and patched configs in
+> **different time windows** on a machine with 1-minute load average 66–147 from unrelated
+> concurrent agent sessions — uneven contention between the two windows manufactured a fake
+> speedup for the patch. Every throughput number in this document has since been re-measured
+> round-robin-interleaved (A,B,C,…,A,B,C,…) on the same machine under light, evenly-shared external
+> load (236–326% CPU, ~2.4–3.3 of 16 cores). Full method and retraction:
+> `results/REMEASURE-2026-08-04-QUIET.md`. This is called out here, not buried in a footnote — a
+> submission that publicly retracts its own wrong number is more credible, not less.
 
 **The hook that started this — measured with real `lldb` breakpoints, not inferred:** at
 `llama.cpp`'s *default* thread count (physical core count — 16 on this machine), single-token
@@ -35,9 +47,11 @@ threads=16  decode: SME2 fires ZERO times (51,214 NEON hits instead)   <- advert
 
 All numbers in this document were produced by code in this repo, run for real on real Arm
 hardware. Anything not yet measured is marked `[not yet measured]` — never invented, never
-interpolated. See `results/OPTIMIZATION.md` for the full optimization verdict, `results/SUMMARY.md`
-for the diagnosis run log, and `results/GROUND-TRUTH-DISPATCH.md` for the authoritative, corrected
-dispatch rule (an earlier draft of this finding was incomplete — see "The correction" below).
+interpolated. See `results/REMEASURE-2026-08-04-QUIET.md` for the authoritative, corrected
+throughput numbers (supersedes `results/OPTIMIZATION.md` and `results/crossover/` where they
+disagree), `results/SUMMARY.md` for the diagnosis run log, and `results/GROUND-TRUTH-DISPATCH.md`
+for the authoritative, corrected dispatch rule (an earlier draft of that finding was incomplete —
+see "the correction, up front" in Finding 1 below).
 
 ---
 
@@ -245,11 +259,16 @@ should be read as "this regime is unstable," not a precise point estimate.
 
 The `bench.py` sweep above measured the phase-dependent crossover. A second, independently written
 harness (`tools/crossover.py`, its own methodology doc at `tools/crossover.md`) re-derived the same
-optima from scratch: decode optimum `threads=2, SME=on` (median **305.4 tok/s**, vs. `bench.py`'s
-327.6 — different session, same machine, within normal run-to-run variance on this shared box) and
-prefill optimum `threads=8, SME=off/NEON` (median **2,615.6 tok/s**, vs. `bench.py`'s 2,676.4).
-Two independent tools, two independent runs, the same qualitative answer: **decode wants
-SME2 + few threads; prefill wants NEON + many threads.**
+optima from scratch: decode optimum `threads=2, SME=on` and prefill optimum `threads=8,
+SME=off/NEON` — the same qualitative crossover as `bench.py` above. **The absolute magnitudes from
+that first `crossover.py` session are superseded** (see "Correction" near the top of this README):
+they were collected under the same uncontrolled, non-interleaved contention that manufactured the
+patch's original inflated headline number. The quiet, round-robin-interleaved re-measurement
+(`results/REMEASURE-2026-08-04-QUIET.md`) reconfirms the identical qualitative crossover — decode
+optimum at `-t 2` (93.6 → 321.0 tok/s) and prefill optimum at `-t 8` (1,230.3 → 2,198.1 tok/s) —
+with tight, non-overlapping stdev bands. Two independent tools, two independent runs, the same
+qualitative answer, now measured cleanly: **decode wants SME2 + few threads; prefill wants NEON +
+many threads.**
 
 ### Why the dispatcher can't just do this itself
 
@@ -262,19 +281,22 @@ process. One `llama-cli` process cannot run SME2-for-decode and NEON-forced-for-
 time — it picks one kernel-family policy at startup and keeps it. That is the missing capability
 this project's patch targets (full mechanism and line citations: `docs/FINDINGS.md`).
 
-### Before / after, decode and prefill separate, with variance (`tools/crossover.py`, n=5, median ± stddev)
+### Before / after, decode and prefill separate, with variance (re-measured 2026-08-04, quiet host, round-robin interleaved, `llama-bench -r 1`, n=7, median ± stdev)
 
 | Configuration | decode tok/s | prefill tok/s | Requires code changes? |
 |---|---:|---:|---|
-| `llama.cpp` default (no `-t`/`-tb`; resolves to **12** threads on this machine, not 16 — verified via `llama-cli -v`) | 45.5 ± 7.71 | 1,145.0 ± 136.05 | — |
-| **Hand-tuned split** (`-t 2 -tb 8`, `GGML_KLEIDIAI_SME` off) — achievable **today** | **198.9 ± 16.85** (**4.4x** vs default) | **2,257.5 ± 170.03** (**2.0x** vs default) | **No** |
-| Phase-aware patch, `GGML_KLEIDIAI_PHASE_AWARE=1`, **default thread count** (no `-t`/`-tb` at all) | 71.6 ± 11.18 (**+57.3%** vs default) | 1,328.4 ± 267.51 (noise — patch's diff never touches prefill's code path) | Yes, opt-in |
-| Phase-aware patch + best thread settings | resolves to the identical `-t 2 -tb 8` — patch's own branch never activates at `nth_total == sme_thread_cap`, so this **cannot exceed** the hand-tuned row above | (same) | Yes, opt-in |
+| `llama.cpp` default (no `-t`/`-tb`; resolves to **12** threads on this machine, not 16 — verified via `llama-cli -v`) | 93.6 ± 2.47 | 1,230.3 ± 118.52 | — |
+| **Hand-tuned split** (`-t 2` for decode, `-t 8`/`-tb 8` for prefill) — achievable **today** | **321.0 ± 2.09** (**3.43x** vs default) | **2,198.1 ± 72.59** (**1.79x** vs default) | **No** |
+| Phase-aware patch, `GGML_KLEIDIAI_PHASE_AWARE=1`, **default thread count** (no `-t`/`-tb` at all) | 82.5 ± 4.07 (**0.88x** vs default — **~12% slower**, a real regression outside noise, not a win) | 1,202.1 ± 96.26 (0.98x vs default — a tie; patch's diff never touches prefill's code path) | Yes, opt-in |
+| Phase-aware patch + `-t 2` | 317.5 ± 3.58 (0.99x vs the hand-tuned row — a statistical tie; the patch is inert here, its branch never activates at `nth_total == sme_thread_cap`) | `[not yet measured at -t 8/-tb 8]` | Yes, opt-in |
 
-Source: `results/OPTIMIZATION.md` §2 (rows (a)–(d)); raw JSON in `results/crossover/` and
-`results/crossover/patched/`.
+Source: `results/REMEASURE-2026-08-04-QUIET.md` — authoritative, re-measured 2026-08-04 on a quiet,
+round-robin-interleaved host. **Supersedes** `results/OPTIMIZATION.md` §2 and the raw JSON in
+`results/crossover/` and `results/crossover/patched/`, which were collected under heavy,
+non-interleaved external load in different time windows for baseline vs. patched (see "Correction"
+near the top of this README).
 
-### The patch — opt-in, symbol-level proven, ceiling unchanged
+### The patch — an honest negative result: dispatch works, throughput doesn't
 
 `patches/0001-kleidiai-phase-aware-dispatch.patch` (56 insertions / 3 deletions, one file, no new
 deps) adds `GGML_KLEIDIAI_PHASE_AWARE=1` (default off). When set, a GEMV-shaped op (`ne11 == 1`,
@@ -285,28 +307,49 @@ design was rejected during design: this threadpool model requires every thread t
 barriers the same number of times per op, and idling threads risks a deadlock). Full mechanism,
 diff walkthrough, and design rationale: `patches/README.md` and `docs/FINDINGS.md`.
 
+The hypothesis behind the patch was straightforward: Finding 1 shows decode is structurally
+excluded from SME2 above the thread cap, so routing it into the existing hybrid path should recover
+some of that throughput automatically, with no flags required. **We built it, measured it honestly,
+and the hypothesis did not hold.**
+
 **Symbol-level dispatch proof** (`tools/verify_dispatch.py`, same patched binary, only the env var
-changes — an apples-to-apples single-binary A/B):
+changes — an apples-to-apples single-binary A/B). This part is real and unaffected by the
+correction below — these are breakpoint hit counts, not timings, so external CPU contention cannot
+distort them:
 
 | threads | flag OFF, hits (SME2/other) | flag ON, hits (SME2/other) | verdict |
 |---:|---|---|---|
 | 4, decode | **0 / 15,936** — exact match to the pre-patch ground truth | **3,072 / 10,428** | dispatch genuinely changes |
 | 8, decode | **0 / 31,872** | **2,354 / 20,517** | dispatch genuinely changes |
 
-This is real proof the patch does what it claims at the dispatch level, not a selection-log
-artifact. **But it does not raise the ceiling.** At the thread counts where the patch actually
-activates (4, 8), its hybrid decode throughput (246.7 and 149.2 tok/s) is a wash-to-slight-regression
-against the unpatched NEON collapse at those same thread counts (258.2 and 143.3 — overlapping noise
-bands), and neither comes close to the pre-existing `-t 2` ceiling (~305 tok/s, no patch needed).
-The patch's only clean, honest win is the specific case of a user who passes **no** thread flags at
-all: decode +57.3%, automatically — closing about 10% of the absolute gap to the ceiling (26.1 of
-259.5 tok/s), not the gap itself. It does not beat hand-tuning, and it does not touch the
-process-global `GGML_KLEIDIAI_SME` limitation described above — the *theoretical* best (SME2-decode
-+ NEON-forced-prefill, simultaneously, in one process) remains **`[NOT YET ACHIEVABLE]`** with or
-without this patch. Full verdict with every caveat: `results/OPTIMIZATION.md`.
+That is real proof the patch does what it claims at the dispatch level, not a selection-log
+artifact. **But dispatching SME2 is not the same as being faster, and here it isn't.** Re-measured
+2026-08-04, quiet and round-robin-interleaved (`results/REMEASURE-2026-08-04-QUIET.md`): at the
+default thread count (12 — the exact case the patch targets, a user who passes no thread flags at
+all) throughput goes **93.6 → 82.5 tok/s, i.e. ~12% *slower***, a real regression outside the
+measurement noise (93.6 ± 2.47 vs. 82.5 ± 4.07 do not overlap). At `-t 2` the patch is inert
+(321.0 → 317.5 tok/s, a statistical tie; its branch never activates at `nth_total == sme_thread_cap`).
+At prefill's default thread count it is also a tie (1,230.3 → 1,202.1 tok/s), unsurprising since the
+patch's diff never touches prefill's code path.
+
+**Mechanism, stated honestly:** at 12 threads the hybrid split gives SME2 only 2 of them while the
+other 10 run NEON, and coordinating that split costs more than the SME2 lane returns for a GEMV
+shape this small. Pure NEON on all 12 threads wins. Upstream's existing behaviour — collapsing to
+NEON above the thread cap — is, on this chip and this model, the better default, and the patch's
+premise that decode was being unfairly excluded is **not supported by throughput**, even though the
+exclusion itself (Finding 1) is real and the dispatch change proven above genuinely works as
+designed. The patch does not beat hand-tuning (`-t 2`, no code changes, 321.0 tok/s) at any thread
+count, and it does not touch the process-global `GGML_KLEIDIAI_SME` limitation described above —
+the *theoretical* best (SME2-decode + NEON-forced-prefill, simultaneously, in one process) remains
+**`[NOT YET ACHIEVABLE]`** with or without this patch. Full verdict with every caveat:
+`results/REMEASURE-2026-08-04-QUIET.md`.
 
 **Reported upstream:** [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)
-(filed 2026-08-04, both findings, reproduction commands, and an offer to send this patch).
+(filed 2026-08-04, both findings, reproduction commands, and an offer to send this patch). Per the
+re-measurement above, the *warning* half of the patch (surfacing that SME2 silently isn't in use)
+should be proposed to maintainers on its own merits — it costs nothing and closes a real
+observability gap. The *phase-aware dispatch* half is reported as a **measured negative result**,
+not a performance improvement.
 
 ---
 
@@ -479,11 +522,14 @@ non-TTY stdin.
   16-thread cells that are present are high-variance and should be read directionally).
   `tools/crossover.py`'s independent sweep does cover `threads=4`, and both harnesses' overlapping
   cells (`≤8` threads) agree within ~2%.
-- **The phase-aware patch does not raise the performance ceiling and does not beat hand-tuning.**
-  Its only clean win is the true-default (no `-t`/`-tb`) case (decode +57.3%); at the thread counts
-  where its hybrid path actually activates (4, 8) it is a statistical tie-to-slight-regression
-  against the unpatched NEON collapse, and no configuration found with the patch beats the
-  pre-existing `-t 2` config, patch or no patch. Full numbers: `results/OPTIMIZATION.md`.
+- **The phase-aware patch is a measured regression, not a win, and does not beat hand-tuning.**
+  Re-measured 2026-08-04 on a quiet, round-robin-interleaved host
+  (`results/REMEASURE-2026-08-04-QUIET.md`): at the true-default (no `-t`/`-tb`) case it is
+  **~12% slower** (93.6 → 82.5 tok/s, outside noise), and at every other thread count measured it
+  is a statistical tie against the unpatched binary. No configuration found with the patch beats
+  the pre-existing `-t 2` config, patch or no patch. The earlier "+57.3%" figure for this row was a
+  non-interleaved contention artifact and is retracted — see the "Correction" note near the top of
+  this README.
 - **The patch is Apple-only by construction** (`detect_num_smcus()`, the function that sets
   `sme_thread_cap`, is an `__APPLE__`-only code path) — it has no effect on the Neoverse-N2 free CI
   lane or the DGX Spark, neither of which has SME2.

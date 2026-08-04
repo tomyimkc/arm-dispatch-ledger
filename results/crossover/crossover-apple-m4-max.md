@@ -1,5 +1,20 @@
 # Crossover harness results -- apple-m4-max
 
+> **SUPERSEDED — read before trusting any cross-run comparison from this file.**
+> These numbers were collected under heavy external load (1-minute load average 66-147
+> on this 16-core host — see "Contention note" below), and this file's baseline sweep
+> and the sibling patched sweep
+> (`results/crossover/patched/crossover-apple-m4-max-patched-phase-aware.md`) were **not
+> interleaved against each other** -- they were run as two separate invocations roughly
+> 40 minutes apart, so any comparison drawn *across* the two files (baseline vs. patched)
+> is invalid and must not be cited. **Superseded by
+> [`results/REMEASURE-2026-08-04-QUIET.md`](../REMEASURE-2026-08-04-QUIET.md)**, which
+> re-measured the same comparison round-robin-interleaved on a quieter host. The
+> **within-run** relative ordering in the tables below (which thread count / SME state
+> wins within *this one file's own* sweep) is still informative and was not itself
+> contradicted by the re-measurement. Nothing below has been edited or deleted -- this is
+> the honest raw record of a contended run, kept as evidence, not as a current claim.
+
 - Generated: 2026-08-04T03:12:51.757832+00:00
 - CPU: Apple M4 Max
 - llama.cpp bin dir: `/tmp/llama.cpp/build/bin`  (commit: dbadb68)

@@ -1,5 +1,22 @@
 # Crossover harness results -- apple-m4-max-patched-phase-aware
 
+> **SUPERSEDED — read before trusting any cross-run comparison from this file.**
+> These numbers were collected under heavy external load (1-minute load average up to
+> ~100+ on this 16-core host — see "Contention note" below), and this file's patched
+> sweep and the sibling baseline sweep (`results/crossover/crossover-apple-m4-max.md`)
+> were **not interleaved against each other** -- they were run as two separate
+> invocations roughly 40 minutes apart, so any comparison drawn *across* the two files
+> (patched vs. baseline) is invalid and must not be cited. That non-interleaved,
+> different-contention-window comparison is exactly what produced the retracted
+> "decode +57.3%" figure previously reported in `results/OPTIMIZATION.md`. **Superseded
+> by [`results/REMEASURE-2026-08-04-QUIET.md`](../../REMEASURE-2026-08-04-QUIET.md)**,
+> which re-measured the same comparison round-robin-interleaved on a quieter host and
+> found the phase-aware patch to be a ~12% *regression* at default thread count, not a
+> win. The **within-run** relative ordering in the tables below (which thread count / SME
+> state wins within *this one file's own* sweep) is still informative and was not itself
+> contradicted by the re-measurement. Nothing below has been edited or deleted -- this is
+> the honest raw record of a contended run, kept as evidence, not as a current claim.
+
 - Generated: 2026-08-04T03:54:49.357269+00:00
 - CPU: Apple M4 Max
 - llama.cpp bin dir: `/tmp/llama-phase-aware/build/bin`  (commit: ef973b1)
