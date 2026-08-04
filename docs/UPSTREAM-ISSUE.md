@@ -1,15 +1,16 @@
-# Ready-to-file GitHub issue for ggml-org/llama.cpp
+# Upstream issue for ggml-org/llama.cpp
 
-Status: **drafted, not filed.** Paste the section below the `---` into a new issue at
-https://github.com/ggml-org/llama.cpp/issues/new. Suggested labels: `bug`, `kleidiai`,
-`ARM`, `documentation` (the maintainers should pick the actual triage labels; ours are
-just a starting guess). Suggested title is the first line below.
+Status: **FILED 2026-08-04 — [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)** (open).
+
+This file is retained as the source of record for what was reported and why; the text below
+the `---` is verbatim what was submitted. Suggested labels were `bug`, `kleidiai`, `ARM`,
+`documentation` — triage is the maintainers' call.
 
 Everything under "Evidence" was produced by code in this repository
-(`tomyimkc/arm-dispatch-ledger`, Apache-2.0) and can be reproduced with the commands
-shown. We are happy to open this issue ourselves, attach the raw
-`results/dispatch-ledger-darwin-arm64.json`, or send a PR implementing the suggested
-fix — whichever the maintainers prefer.
+(`tomyimkc/arm-dispatch-ledger`, Apache-2.0) and can be reproduced with the commands shown.
+The offer in "Suggested fix" stands: if the maintainers confirm the direction, we will send a
+PR adding the one-shot `GGML_LOG_WARN`, mirroring the precedent already in the codebase for
+the weight-type fallback.
 
 ---
 
