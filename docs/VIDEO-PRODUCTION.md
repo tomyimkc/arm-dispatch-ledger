@@ -14,21 +14,30 @@ mapping, so a judge can check the video against the evidence without watching fr
 and so the video cannot silently drift from the repo if a number is later corrected. It is the
 same discipline `tools/check_claims.py` enforces for the prose.
 
-## Structure — 6 beats × 15.04 s
+## Structure — 6 beats x 15 s
 
-| # | Beat | Claim shown on screen | Source |
+**The narration is plain English; the on-screen panels carry the technical evidence.** A general
+viewer follows the story from the voice alone; an Arm engineer reads the proof off the panel. That
+split is deliberate — the contest scores "can it quickly capture attention and communicate value"
+alongside technical implementation, and one script cannot serve both if it is written only for
+engineers.
+
+| # | Said in plain English | Shown on the panel | Source |
 |---|---|---|---|
-| 01 | The claim | banner `SME = 1 \| SME2 = 1 \| KLEIDIAI = 1`; log `primary q4 kernel feature SME2`; **zero SME2 kernels executed** | `results/GROUND-TRUTH-DISPATCH.md` |
-| 02 | The proof | decode @12 threads: **0 SME2 / 31,871 NEON**; @2 threads: **5,826 SME2**; 18 `kai_run_matmul` symbols | `results/dispatch-ledger-darwin-arm64.json` |
-| 03 | Root cause | thread cap hardcoded (`M4 Max = 2`); hybrid needs `ne11 >= 128`; decode is always `ne11 == 1` | `kleidiai.cpp` @ `dbadb68`, cited in `docs/FINDINGS.md` |
-| 04 | Honest decomposition | total **3.43×** (93.6 → 321.0 t/s); **3.95×** from thread tuning alone with SME2 OFF; **1.31×** from SME2 itself | `results/REMEASURE-2026-08-04-QUIET.md` |
-| 05 | The fix | decode **67.8 → 145.9 t/s (2.15×)** zero flags; matches hand-tuned ceiling 146.0 (0.999×); prefill 1835.2 → 1779.8 unchanged | `results/AUTODEFAULTS.md` |
-| 06 | Why the patch, not the flag | naive `-t 2` collapses prefill **1835.2 → 975.6 (−47%)**; patch does not; upstream `#26547` | `results/AUTODEFAULTS.md` |
+| 01 | "Your laptop has a chip built to speed up AI. Your app says it's using it. It wasn't." | `SME2 enabled` / `using the fast kernel` / **the fast kernel: 0 times** | `results/GROUND-TRUTH-DISPATCH.md` |
+| 02 | "Normal benchmarks only measure time — the time looks fine either way." | timing can't see it · 12 cores: **0 fast / 31,871 fallback** · 2 cores: **5,826 fast** | `results/dispatch-ledger-darwin-arm64.json` |
+| 03 | "Two hidden rules. Chatting happens one word at a time, so it never qualifies." | cores capped at 2 · needs 128+ words at once · never qualifies | `kleidiai.cpp` @ `dbadb68` |
+| 04 | "Most of the gain was just using fewer cores — a trick people already knew." | total **3.43x** · fewer cores **3.95x** (already known) · accelerator itself **1.31x** | `results/REMEASURE-2026-08-04-QUIET.md` |
+| 05 | "I changed the code. It picks the right setting automatically." | **67.8 → 145.9 words/s** · matches expert tuning (146.0) · everything else unchanged | `results/AUTODEFAULTS.md` |
+| 06 | "The shortcut most people would reach for cuts other performance nearly in half. Mine doesn't." | shortcut **-47%** · this fix **2.15x, nothing lost** · upstream **#26547** | `results/AUTODEFAULTS.md` |
 
-Beat 04 is deliberate. The video states on camera that most of the raw tuning win is a
-well-known Apple Silicon effect and **not** this project's discovery, and that SME2's own
-contribution is the smaller 1.31×. A submission video is the easiest place in the world to quietly
-drop that caveat; it is stated instead.
+Beat 04 is deliberate. The video says out loud that most of the raw speed-up is a well-known
+effect and **not** this project's discovery, and that the accelerator's own contribution is the
+smaller 1.31x. A submission video is the easiest place in the world to quietly drop that caveat.
+
+Jargon deliberately kept off the soundtrack: `ne11`, `kai_run_matmul`, KleidiAI, GEMV, dispatch,
+thread cap. Each has a plain-language stand-in ("large batches", "chip instructions", "the fast
+kernel", "one word at a time", "hidden rule", "how many cores it may use").
 
 ## Pipeline
 
