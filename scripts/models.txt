@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# scripts/models.txt — the manifest of GGUF models this repo's scripts and
+# CI lanes know how to fetch, one per line, pipe-delimited:
+#
+#   model_id|hf_repo|hf_file|sha256|license|notes
+#
+# model_id : short slug ([a-z0-9._-]+), used as a cache-key component and as
+#            the GitHub Actions matrix value in .github/workflows/verify-free-arm64.yml.
+# hf_repo  : "<org>/<repo>" on huggingface.co.
+# hf_file  : exact filename inside that repo, fetched from
+#            https://huggingface.co/<hf_repo>/resolve/main/<hf_file>.
+# sha256   : sha256 of the exact bytes at that URL, captured by a REAL
+#            download + `shasum -a 256` (not derived from the HF
+#            X-Linked-ETag response header sight-unseen — that header comes
+#            from HF's Xet/CAS storage layer and is a content hash, which
+#            happened to also equal the sha256 for every file below when
+#            cross-checked on 2026-08-04, but that is a lucky coincidence of
+#            this storage backend, not a documented guarantee, so the
+#            authoritative value here always comes from a real download).
+# license  : verified LIVE against the HF API's cardData.license field —
+#            `curl -s https://huggingface.co/api/models/<hf_repo> | \
+#              python3 -c "import json,sys;print(json.load(sys.stdin)['cardData']['license'])"`
+#            — never copied from a README by eye. Only apache-2.0 or mit
+#            entries may be added: this repo is Apache-2.0 and its Devpost
+#            submission publishes fetch instructions that must not point a
+#            reader at a non-commercial license.
+# notes    : why this model is in the set / what evidence gap it closes.
+#
+# REJECTED (recorded so nobody re-adds it without re-verifying): querying
+# https://huggingface.co/api/models/Qwen/Qwen2.5-3B-Instruct-GGUF on
+# 2026-08-04 returned cardData.license = "other" (tag "license:other") — the
+# Qwen Research License, non-commercial. Do not add Qwen2.5-3B-Instruct (or
+# any other "license:other"/"license:unknown" tagged model) to this file.
+#
+# model_id|hf_repo|hf_file|sha256|license|notes
+qwen2.5-0.5b-q4_0|Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-instruct-q4_0.gguf|7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed|apache-2.0|Existing baseline (337 MB): every committed Finding 1/2 measurement in results/ was produced against this exact file. license verified live 2026-08-04 (cardData.license=apache-2.0).
+qwen2.5-0.5b-q8_0|Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-instruct-q8_0.gguf|ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e|apache-2.0|Same weights, Q8_0 quant (676 MB, real download + shasum verified 2026-08-04). KleidiAI's dispatch gate only ever selects an SME2/NEON matmul kernel for Q4_0 or Q8_0 tensors (see ggml/src/ggml-cpu/kleidiai/kleidiai.cpp) -- Q4_0-only evidence tells half that story. license verified live 2026-08-04 (cardData.license=apache-2.0), same repo/card as the Q4_0 file above.
+qwen2.5-1.5b-q4_0|Qwen/Qwen2.5-1.5B-Instruct-GGUF|qwen2.5-1.5b-instruct-q4_0.gguf|dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb|apache-2.0|Larger Apache-2.0 model (1.07 GB, real download + shasum verified 2026-08-04), same Qwen2.5-Instruct family/tokenizer as the 0.5B rows above so dispatch/throughput results stay comparable across the size axis. Qwen2.5-3B-Instruct-GGUF was considered and REJECTED (license:other, non-commercial -- see header note); 1.5B is the largest same-family GGUF confirmed apache-2.0 as of 2026-08-04.

@@ -18,7 +18,13 @@
 # machines. Contrast with verify-macos-arm64.yml and
 # verify-spark-aarch64.yml, which run on self-hosted runners and therefore
 # deliberately do NOT trigger on pull_request / pull_request_target (see the
-# security comments in those files).
+# security comments in those files). The `discover-models` job below reads
+# scripts/models.txt from the SAME checkout (so on a fork's PR, a fork could
+# only add/rename ITS OWN matrix legs, never touch a machine outside the
+# ephemeral runner) and every place its output (`matrix.model`) reaches a
+# `run:` shell step, it is passed through an `env:` binding first
+# (`MATRIX_MODEL`) rather than interpolated directly into the script text —
+# the standard mitigation for untrusted `${{ }}` values in Actions scripts.
 #
 # Finding 2 (SVE unreachable at 128-bit): Neoverse-N2 implements SVE2 at
 # 128-bit, below KleidiAI's `ggml_cpu_get_sve_cnt() == QK8_0` (256-bit) gate,
@@ -28,6 +34,38 @@
 # `continue-on-error: true` and never gates the job. See
 # results/GROUND-TRUTH-DISPATCH.md (written by tools/verify_dispatch.py's
 # sibling research) for the full corrected dispatch rule.
+#
+# MODEL SWEEP (evidence-broadening): this lane runs its full pipeline once
+# per model in scripts/models.txt (currently 3: the original
+# Qwen2.5-0.5B-Instruct Q4_0 baseline, the same model's Q8_0 quant — the
+# other quant KleidiAI actually dispatches on — and a larger same-family
+# Qwen2.5-1.5B-Instruct Q4_0 model), as a GitHub Actions matrix built
+# dynamically from that manifest (see the `discover-models` job) so the
+# manifest stays the single source of truth — adding a row there is enough
+# to add a new matrix leg, no further edit to this file required.
+#
+# WHAT CI COVERS vs. LOCAL-ONLY (per model, every matrix leg):
+#   CI (this workflow):    threads {1, 2, 4} (scripts/common.sh's
+#                           default_thread_sweep(), capped at this runner's
+#                           nproc=4 — confirmed via a prior run's
+#                           results/hw-features-Linux-aarch64.txt), reduced
+#                           bench (BENCH_REDUCED=1: tool-default
+#                           threads/phases, reps=2).
+#   Local-only (developer): the full thread sweep {1, 2, 4, 8, 16} and the
+#                           full bench (BENCH_REDUCED=0: reps=5) via
+#                           `MODEL_ID=<id> ./scripts/run_all.sh` (or
+#                           `MODEL_SET=all` to pre-fetch every model first —
+#                           see scripts/lib/fetch_model.sh) — this is also
+#                           the only place the real SME2-vs-NEON dispatch
+#                           story is measurable at all, since Neoverse-N2 has
+#                           no SME2 (see verify-macos-arm64.yml).
+# Per-model bench/dispatch numbers for the Q8_0 and 1.5B rows are NOT yet
+# committed under results/ for the Apple Silicon (SME2) lane as of this
+# writing — results/SUMMARY.md's committed numbers are Q4_0/0.5B only. This
+# workflow is what produces the first real (Neoverse-N2, NEON/dotprod-only)
+# evidence for the other two models; treat any SME2-specific claim about
+# them as `[not yet measured]` until verify-macos-arm64.yml or a local
+# M4-class run actually produces it.
 
 name: verify-free-arm64
 
@@ -45,10 +83,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  discover-models:
+    name: Discover model matrix (scripts/models.txt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build model matrix from scripts/models.txt
+        id: build
+        run: |
+          # Pipe-delimited manifest -> JSON array of model_id, matching the
+          # exact comment/blank-line skipping and field-1-trim rules
+          # scripts/lib/fetch_model.sh's manifest_lookup()/manifest_all_ids()
+          # use, so this job's matrix and that script's MODEL_SET=all always
+          # agree on "every model in the manifest".
+          ids_json="$(awk -F'|' '
+              /^[[:space:]]*#/ { next }
+              /^[[:space:]]*$/ { next }
+              { id = $1; gsub(/^[ \t]+|[ \t]+$/, "", id); print id }
+            ' scripts/models.txt \
+            | python3 -c 'import json, sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
+          if [[ "$ids_json" == "[]" ]]; then
+            echo "::error::scripts/models.txt produced zero model ids — check the manifest format" >&2
+            exit 1
+          fi
+          echo "resolved model matrix: $ids_json"
+          echo "matrix={\"model\":$ids_json}" >>"$GITHUB_OUTPUT"
+
   verify:
-    name: Build, verify dispatch, bench (Neoverse-N2, free hosted)
+    name: "Build, verify dispatch, bench (Neoverse-N2, free hosted) [${{ matrix.model }}]"
+    needs: discover-models
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-models.outputs.matrix) }}
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    # 20 minutes: measured baseline (single model, warm llama.cpp cache) is
+    # ~3.5 minutes end to end (see this file's MODEL SWEEP comment above);
+    # the two new models are larger downloads (Q8_0 ~676 MiB, 1.5B ~1.07 GiB
+    # vs. the original ~337 MiB) but every other stage is model-size
+    # independent, so 20 minutes is generous headroom even on a slow CDN day
+    # while still enforcing the "keep it fast" budget as a real constraint.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +150,11 @@ jobs:
 
       - name: Compute cache keys and paths
         id: vars
+        env:
+          # Untrusted-input hygiene: bind the matrix expression to an env
+          # var instead of interpolating `${{ matrix.model }}` directly into
+          # the script below (see this file's SECURITY comment).
+          MATRIX_MODEL: ${{ matrix.model }}
         run: |
           # CACHE_DIR is exported via $GITHUB_ENV (so every later step in
           # this job sees it), rather than a job-level `env:` block, because
@@ -80,9 +166,46 @@ jobs:
           echo "CACHE_DIR=${RUNNER_TEMP}/adl-cache" >>"$GITHUB_ENV"
           source scripts/common.sh
           echo "llama_cpp_ref=${LLAMA_CPP_REF}" >>"$GITHUB_OUTPUT"
-          echo "hf_file_sha256=${HF_FILE_SHA256}" >>"$GITHUB_OUTPUT"
+
+          # Resolve this matrix leg's model from scripts/models.txt (the
+          # single source of truth — same manifest, same lookup semantics as
+          # scripts/lib/fetch_model.sh's manifest_lookup()) and export
+          # HF_REPO/HF_FILE/HF_FILE_SHA256/MODEL_PATH via $GITHUB_ENV so
+          # every later step's `source scripts/common.sh` picks up THIS
+          # model (common.sh only *defaults* those vars with `:=`, so an
+          # already-exported value wins) — no edit to common.sh or any
+          # scripts/lib/*.sh needed for this to work.
+          entry="$(awk -F'|' -v want="$MATRIX_MODEL" '
+              /^[[:space:]]*#/ { next }
+              /^[[:space:]]*$/ { next }
+              {
+                id = $1
+                gsub(/^[ \t]+|[ \t]+$/, "", id)
+                if (id == want) { print $2 "|" $3 "|" $4; found = 1; exit }
+              }
+              END { if (!found) exit 1 }
+            ' scripts/models.txt)"
+          if [[ -z "$entry" ]]; then
+            echo "::error::model id '$MATRIX_MODEL' not found in scripts/models.txt" >&2
+            exit 1
+          fi
+          IFS='|' read -r model_repo model_file model_sha <<<"$entry"
+          {
+            echo "HF_REPO=$model_repo"
+            echo "HF_FILE=$model_file"
+            echo "HF_FILE_SHA256=$model_sha"
+            echo "MODEL_PATH=${RUNNER_TEMP}/adl-cache/models/$model_file"
+          } >>"$GITHUB_ENV"
+          echo "resolved $MATRIX_MODEL -> repo=$model_repo file=$model_file sha256=$model_sha"
 
       - name: Cache llama.cpp build
+        # Shared across every matrix leg (same LLAMA_CPP_REF, same
+        # -DGGML_CPU_KLEIDIAI=ON build regardless of model) — first leg to
+        # finish a build in a given workflow run populates it for the NEXT
+        # workflow run's legs; concurrent legs within the same run each
+        # still build once from a cold cache the first time this key is new
+        # (actions/cache has no cross-job locking mid-run), same as before
+        # this file added a model matrix.
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/adl-cache/llama.cpp
@@ -92,12 +215,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/adl-cache/models
-          key: model-${{ steps.vars.outputs.hf_file_sha256 }}-v1
+          # Keyed by model id AND sha256 (not just one or the other): the id
+          # keeps the key human-legible in the Actions cache list; the
+          # sha256 is what actually invalidates the cache if
+          # scripts/models.txt is ever repointed at new bytes for the same
+          # id. Every matrix leg gets its own cache entry, so repeated runs
+          # never re-download a model another leg already fetched.
+          key: model-${{ matrix.model }}-${{ env.HF_FILE_SHA256 }}-v1
 
       - name: Build llama.cpp (KleidiAI)
         run: bash scripts/lib/build_llamacpp.sh
 
       - name: Download GGUF model
+        # Unchanged call — HF_REPO/HF_FILE/HF_FILE_SHA256/MODEL_PATH were
+        # already set for this matrix leg via $GITHUB_ENV above, so
+        # fetch_model.sh's default (no MODEL_ID/MODEL_SET) code path fetches
+        # exactly this leg's model. See scripts/lib/fetch_model.sh's header
+        # for the MODEL_ID / MODEL_SET=all modes this same script also
+        # supports, for local multi-model fetches outside CI.
         run: bash scripts/lib/fetch_model.sh
 
       - name: Build kernels
@@ -116,13 +251,18 @@ jobs:
         # 30861845179) because `rbreak` cannot create pending breakpoints for a
         # dlopen'd backend. This test would have caught that immediately, so it is
         # deliberately NOT continue-on-error: an uninstrumented probe must fail the
-        # build, never quietly emit zeros.
+        # build, never quietly emit zeros. Model-independent (synthetic fixture),
+        # so it runs identically on every matrix leg.
         run: bash tests/l3_gdb_groundtruth/run_test.sh 7
 
       - name: Verify dispatch (thread sweep)
         # See the Finding 2 note in the file header: a Neoverse-N2-specific
         # non-engagement of the SVE path is an expected result, recorded in
-        # the ledger, never a reason to fail this job.
+        # the ledger, never a reason to fail this job. THREAD_SWEEP is left
+        # at scripts/common.sh's default_thread_sweep(), which self-caps at
+        # this runner's nproc (see the WHAT CI COVERS comment above) — this
+        # is the "reduce the thread axis on CI" mechanism, already built
+        # into common.sh rather than duplicated here.
         continue-on-error: true
         run: bash scripts/lib/verify_dispatch.sh
 
@@ -135,22 +275,33 @@ jobs:
 
       - name: Write ledger to job summary
         if: always()
+        env:
+          MATRIX_MODEL: ${{ matrix.model }}
         run: |
-          if [[ -f results/LEDGER.md ]]; then
-            cat results/LEDGER.md >>"$GITHUB_STEP_SUMMARY"
-          else
-            echo "no results/LEDGER.md produced this run" >>"$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            echo "## Model: ${MATRIX_MODEL} (${HF_FILE}, sha256 ${HF_FILE_SHA256})"
+            echo
+            if [[ -f results/LEDGER.md ]]; then
+              cat results/LEDGER.md
+            else
+              echo "no results/LEDGER.md produced this run"
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload results/ artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arm-dispatch-ledger-results-free-arm64
-          # Upload ONLY what this run generated. A bare `path: results/` also sweeps up
-          # the committed Apple M4 Max results, so the "free-arm64" artifact ends up
-          # containing hw-features-Darwin-arm64.txt and an M4 Max bench table -- which
-          # reads as though a Neoverse-N2 runner produced Apple Silicon numbers.
+          # Suffixed per matrix leg — actions/upload-artifact v4 requires
+          # unique names within one workflow run (it no longer merges same-
+          # named artifacts across jobs), and a per-model name is also what
+          # makes each model's evidence separately downloadable/legible in
+          # the Actions UI without opening the job log.
+          name: arm-dispatch-ledger-results-free-arm64-${{ matrix.model }}
+          # Upload ONLY what this run generated. A bare `path: results/` also sweeps
+          # up the committed Apple M4 Max results, so the "free-arm64" artifact ends
+          # up containing hw-features-Darwin-arm64.txt and an M4 Max bench table --
+          # which reads as though a Neoverse-N2 runner produced Apple Silicon numbers.
           # Evidence provenance is the whole point here; keep the lanes separate.
           path: |
             results/*Linux*

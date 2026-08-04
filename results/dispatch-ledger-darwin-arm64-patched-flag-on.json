@@ -1,0 +1,612 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-08-04T04:00:02.929483+00:00",
+  "tool": "verify_dispatch.py",
+  "generator_argv": [
+    "tools/verify_dispatch.py",
+    "--binary",
+    "/tmp/llama-phase-aware/build/bin/llama-cli",
+    "--model",
+    "/tmp/ggufs/q05.gguf",
+    "--threads",
+    "4,8",
+    "--workloads",
+    "decode_short,prefill_long",
+    "--env",
+    "GGML_KLEIDIAI_PHASE_AWARE=1",
+    "--l3-timeout",
+    "240",
+    "--out",
+    "results/dispatch-ledger-darwin-arm64-patched-flag-on.json",
+    "--assert"
+  ],
+  "binary": "/tmp/llama-phase-aware/build/bin/llama-cli",
+  "cpu_backend_lib": "/tmp/llama-phase-aware/build/bin/libggml-cpu.dylib",
+  "model": "/tmp/ggufs/q05.gguf",
+  "configs": [
+    {
+      "platform": "darwin-arm64",
+      "cpu_brand": "Apple M4 Max",
+      "isa_features": {
+        "FEAT_SME": 1,
+        "FEAT_SME2": 1,
+        "FEAT_SME2p1": 0,
+        "FEAT_SME_F64F64": 1,
+        "FEAT_SME_I16I64": 1,
+        "FEAT_I8MM": 1,
+        "FEAT_BF16": 1,
+        "FEAT_DotProd": 1,
+        "sme_max_svl_b": 64,
+        "FEAT_SVE": "absent (not exposed on Apple Silicon; SME2 ships without non-streaming SVE)"
+      },
+      "model": "/tmp/ggufs/q05.gguf",
+      "quant": "Q4_0",
+      "threads": 4,
+      "workload": "decode_short",
+      "workload_description": "short prompt, generation dominates -- exercises the decode-time (ne11 == 1) dispatch path",
+      "n_predict": 4,
+      "prompt_preview": "Hello.",
+      "env": {
+        "requested_env_overrides": {
+          "GGML_KLEIDIAI_PHASE_AWARE": "1"
+        },
+        "kleidiai_related_env": {
+          "GGML_KLEIDIAI_SME": null,
+          "GGML_TOTAL_THREADS": null,
+          "GGML_KLEIDIAI_CHUNK_MULTIPLIER": null,
+          "OMP_NUM_THREADS": null
+        }
+      },
+      "l1": {
+        "lib_path": "/tmp/llama-phase-aware/build/bin/libggml-cpu.dylib",
+        "tool_chain": "macho",
+        "available": true,
+        "error": null,
+        "kai_symbol_count": 264,
+        "kai_run_matmul_symbol_count": 17,
+        "kai_symbols_by_family": {
+          "sme2": 6,
+          "sme": 3,
+          "dotprod": 6,
+          "i8mm": 2
+        },
+        "isa_mnemonic_counts": {
+          "smstart": 13,
+          "smstop": 15,
+          "fmopa": 92,
+          "bfmopa": 36,
+          "smopa": 8
+        }
+      },
+      "l2": {
+        "available": true,
+        "command": [
+          "/tmp/llama-phase-aware/build/bin/llama-cli",
+          "-m",
+          "/tmp/ggufs/q05.gguf",
+          "-p",
+          "Hello.",
+          "-n",
+          "4",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "4",
+          "--verbose"
+        ],
+        "returncode": 0,
+        "timed_out": false,
+        "error": null,
+        "primary_kernel_feature": {
+          "q4": "SME2",
+          "q8": "SME2",
+          "f32": "SME2"
+        },
+        "sme_enabled": true,
+        "sme_variant": "SME2",
+        "sme_detail": "runtime-detected SME cores=2",
+        "buffer_type_fallback_seen": true,
+        "unsupported_tensor_types": [
+          "q4_1"
+        ],
+        "model_file_type": "Q4_0",
+        "system_info_line": "0.00.004.575 I cmn  common_param: system_info: n_threads = 4 (n_threads_batch = 4) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 |",
+        "raw_kleidiai_lines": [
+          "0.00.004.575 I cmn  common_param: system_info: n_threads = 4 (n_threads_batch = 4) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 | ",
+          "0.00.113.680 I kleidiai: primary q4 kernel feature SME2",
+          "0.00.113.681 I kleidiai: primary q8 kernel feature SME2",
+          "0.00.113.681 I kleidiai: primary f32 kernel feature SME2",
+          "0.00.113.682 I kleidiai: SME2 enabled (runtime-detected SME cores=2)",
+          "0.00.113.683 I kleidiai: phase-aware dispatch enabled (GGML_KLEIDIAI_PHASE_AWARE=1, experimental): GEMV ops (decode) may use a hybrid SME+NEON split above sme_thread_cap instead of collapsing to NEON-only; requires SME to be enabled to have any effect",
+          "0.00.116.497 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.116.527 I load_tensors: CPU_KLEIDIAI model buffer size =     0.00 MiB",
+          "0.00.118.833 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |",
+          "0.00.229.119 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.237.688 I load_tensors: CPU_KLEIDIAI model buffer size =   633.02 MiB",
+          "0.00.674.321 W kleidiai: no kernel for tensor type q4_1, not accelerated by KleidiAI (kernels available for Q4_0 and Q8_0)",
+          "0.00.873.101 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |"
+        ],
+        "wall_time_sec": 0.9435975831001997
+      },
+      "l3": {
+        "debugger": "lldb",
+        "available": true,
+        "completed": true,
+        "timed_out": false,
+        "error": null,
+        "dispatch_regex": "^kai_run_matmul",
+        "wall_time_sec": 43.08,
+        "kernel_family_executed": "dotprod",
+        "hits_by_symbol": {
+          "kai_run_matmul_clamp_f32_bf16p2vlx2_bf16p2vlx2_2vlx2vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1b_2vlx2vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1biasf32_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme2_dot": 55,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme_dot": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4x4_1x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 41,
+          "kai_run_matmul_clamp_f32_qai8dxp4x4_qsi8cxp4x4_16x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp4x8_qsi8cxp4x8_16x4_neon_i8mm": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4vlx4_1x4vl_sme2_sdot": 3017,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod": 2611,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod": 7776,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 0
+        },
+        "hits_by_family": {
+          "sme2": 3072,
+          "sme": 0,
+          "dotprod": 10428,
+          "i8mm": 0
+        },
+        "total_hits": 13500,
+        "breakpoints_requested": null,
+        "breakpoints_created": null
+      },
+      "advertised_family": "SME2",
+      "verdict": "SME2_HYBRID_DISPATCH"
+    },
+    {
+      "platform": "darwin-arm64",
+      "cpu_brand": "Apple M4 Max",
+      "isa_features": {
+        "FEAT_SME": 1,
+        "FEAT_SME2": 1,
+        "FEAT_SME2p1": 0,
+        "FEAT_SME_F64F64": 1,
+        "FEAT_SME_I16I64": 1,
+        "FEAT_I8MM": 1,
+        "FEAT_BF16": 1,
+        "FEAT_DotProd": 1,
+        "sme_max_svl_b": 64,
+        "FEAT_SVE": "absent (not exposed on Apple Silicon; SME2 ships without non-streaming SVE)"
+      },
+      "model": "/tmp/ggufs/q05.gguf",
+      "quant": "Q4_0",
+      "threads": 8,
+      "workload": "decode_short",
+      "workload_description": "short prompt, generation dominates -- exercises the decode-time (ne11 == 1) dispatch path",
+      "n_predict": 4,
+      "prompt_preview": "Hello.",
+      "env": {
+        "requested_env_overrides": {
+          "GGML_KLEIDIAI_PHASE_AWARE": "1"
+        },
+        "kleidiai_related_env": {
+          "GGML_KLEIDIAI_SME": null,
+          "GGML_TOTAL_THREADS": null,
+          "GGML_KLEIDIAI_CHUNK_MULTIPLIER": null,
+          "OMP_NUM_THREADS": null
+        }
+      },
+      "l1": {
+        "lib_path": "/tmp/llama-phase-aware/build/bin/libggml-cpu.dylib",
+        "tool_chain": "macho",
+        "available": true,
+        "error": null,
+        "kai_symbol_count": 264,
+        "kai_run_matmul_symbol_count": 17,
+        "kai_symbols_by_family": {
+          "sme2": 6,
+          "sme": 3,
+          "dotprod": 6,
+          "i8mm": 2
+        },
+        "isa_mnemonic_counts": {
+          "smstart": 13,
+          "smstop": 15,
+          "fmopa": 92,
+          "bfmopa": 36,
+          "smopa": 8
+        }
+      },
+      "l2": {
+        "available": true,
+        "command": [
+          "/tmp/llama-phase-aware/build/bin/llama-cli",
+          "-m",
+          "/tmp/ggufs/q05.gguf",
+          "-p",
+          "Hello.",
+          "-n",
+          "4",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "8",
+          "--verbose"
+        ],
+        "returncode": 0,
+        "timed_out": false,
+        "error": null,
+        "primary_kernel_feature": {
+          "q4": "SME2",
+          "q8": "SME2",
+          "f32": "SME2"
+        },
+        "sme_enabled": true,
+        "sme_variant": "SME2",
+        "sme_detail": "runtime-detected SME cores=2",
+        "buffer_type_fallback_seen": true,
+        "unsupported_tensor_types": [
+          "q4_1"
+        ],
+        "model_file_type": "Q4_0",
+        "system_info_line": "0.00.001.079 I cmn  common_param: system_info: n_threads = 8 (n_threads_batch = 8) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 |",
+        "raw_kleidiai_lines": [
+          "0.00.001.079 I cmn  common_param: system_info: n_threads = 8 (n_threads_batch = 8) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 | ",
+          "0.00.105.865 I kleidiai: primary q4 kernel feature SME2",
+          "0.00.105.865 I kleidiai: primary q8 kernel feature SME2",
+          "0.00.105.866 I kleidiai: primary f32 kernel feature SME2",
+          "0.00.105.866 I kleidiai: SME2 enabled (runtime-detected SME cores=2)",
+          "0.00.105.867 I kleidiai: phase-aware dispatch enabled (GGML_KLEIDIAI_PHASE_AWARE=1, experimental): GEMV ops (decode) may use a hybrid SME+NEON split above sme_thread_cap instead of collapsing to NEON-only; requires SME to be enabled to have any effect",
+          "0.00.108.532 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.108.566 I load_tensors: CPU_KLEIDIAI model buffer size =     0.00 MiB",
+          "0.00.110.606 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |",
+          "0.00.221.148 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.229.498 I load_tensors: CPU_KLEIDIAI model buffer size =   633.02 MiB",
+          "0.00.662.077 W kleidiai: no kernel for tensor type q4_1, not accelerated by KleidiAI (kernels available for Q4_0 and Q8_0)",
+          "0.00.860.839 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |"
+        ],
+        "wall_time_sec": 0.88916049990803
+      },
+      "l3": {
+        "debugger": "lldb",
+        "available": true,
+        "completed": true,
+        "timed_out": false,
+        "error": null,
+        "dispatch_regex": "^kai_run_matmul",
+        "wall_time_sec": 60.82,
+        "kernel_family_executed": "dotprod",
+        "hits_by_symbol": {
+          "kai_run_matmul_clamp_f32_bf16p2vlx2_bf16p2vlx2_2vlx2vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1b_2vlx2vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1biasf32_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme2_dot": 65,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme_dot": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4x4_1x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 127,
+          "kai_run_matmul_clamp_f32_qai8dxp4x4_qsi8cxp4x4_16x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp4x8_qsi8cxp4x8_16x4_neon_i8mm": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4vlx4_1x4vl_sme2_sdot": 2289,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod": 4839,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod": 15551,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 0
+        },
+        "hits_by_family": {
+          "sme2": 2354,
+          "sme": 0,
+          "dotprod": 20517,
+          "i8mm": 0
+        },
+        "total_hits": 22871,
+        "breakpoints_requested": null,
+        "breakpoints_created": null
+      },
+      "advertised_family": "SME2",
+      "verdict": "SME2_HYBRID_DISPATCH"
+    },
+    {
+      "platform": "darwin-arm64",
+      "cpu_brand": "Apple M4 Max",
+      "isa_features": {
+        "FEAT_SME": 1,
+        "FEAT_SME2": 1,
+        "FEAT_SME2p1": 0,
+        "FEAT_SME_F64F64": 1,
+        "FEAT_SME_I16I64": 1,
+        "FEAT_I8MM": 1,
+        "FEAT_BF16": 1,
+        "FEAT_DotProd": 1,
+        "sme_max_svl_b": 64,
+        "FEAT_SVE": "absent (not exposed on Apple Silicon; SME2 ships without non-streaming SVE)"
+      },
+      "model": "/tmp/ggufs/q05.gguf",
+      "quant": "Q4_0",
+      "threads": 4,
+      "workload": "prefill_long",
+      "workload_description": "long synthetic prompt (~380 words), 1 generated token -- exercises the prefill-time (large ne11) dispatch path",
+      "n_predict": 1,
+      "prompt_preview": "The quick brown fox jumps over the lazy dog. The history of ...",
+      "env": {
+        "requested_env_overrides": {
+          "GGML_KLEIDIAI_PHASE_AWARE": "1"
+        },
+        "kleidiai_related_env": {
+          "GGML_KLEIDIAI_SME": null,
+          "GGML_TOTAL_THREADS": null,
+          "GGML_KLEIDIAI_CHUNK_MULTIPLIER": null,
+          "OMP_NUM_THREADS": null
+        }
+      },
+      "l1": {
+        "lib_path": "/tmp/llama-phase-aware/build/bin/libggml-cpu.dylib",
+        "tool_chain": "macho",
+        "available": true,
+        "error": null,
+        "kai_symbol_count": 264,
+        "kai_run_matmul_symbol_count": 17,
+        "kai_symbols_by_family": {
+          "sme2": 6,
+          "sme": 3,
+          "dotprod": 6,
+          "i8mm": 2
+        },
+        "isa_mnemonic_counts": {
+          "smstart": 13,
+          "smstop": 15,
+          "fmopa": 92,
+          "bfmopa": 36,
+          "smopa": 8
+        }
+      },
+      "l2": {
+        "available": true,
+        "command": [
+          "/tmp/llama-phase-aware/build/bin/llama-cli",
+          "-m",
+          "/tmp/ggufs/q05.gguf",
+          "-p",
+          "The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models.",
+          "-n",
+          "1",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "4",
+          "--verbose"
+        ],
+        "returncode": 0,
+        "timed_out": false,
+        "error": null,
+        "primary_kernel_feature": {
+          "q4": "SME2",
+          "q8": "SME2",
+          "f32": "SME2"
+        },
+        "sme_enabled": true,
+        "sme_variant": "SME2",
+        "sme_detail": "runtime-detected SME cores=2",
+        "buffer_type_fallback_seen": true,
+        "unsupported_tensor_types": [
+          "q4_1"
+        ],
+        "model_file_type": "Q4_0",
+        "system_info_line": "0.00.001.481 I cmn  common_param: system_info: n_threads = 4 (n_threads_batch = 4) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 |",
+        "raw_kleidiai_lines": [
+          "0.00.001.481 I cmn  common_param: system_info: n_threads = 4 (n_threads_batch = 4) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 | ",
+          "0.00.105.818 I kleidiai: primary q4 kernel feature SME2",
+          "0.00.105.818 I kleidiai: primary q8 kernel feature SME2",
+          "0.00.105.818 I kleidiai: primary f32 kernel feature SME2",
+          "0.00.105.818 I kleidiai: SME2 enabled (runtime-detected SME cores=2)",
+          "0.00.105.819 I kleidiai: phase-aware dispatch enabled (GGML_KLEIDIAI_PHASE_AWARE=1, experimental): GEMV ops (decode) may use a hybrid SME+NEON split above sme_thread_cap instead of collapsing to NEON-only; requires SME to be enabled to have any effect",
+          "0.00.108.449 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.108.478 I load_tensors: CPU_KLEIDIAI model buffer size =     0.00 MiB",
+          "0.00.110.391 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |",
+          "0.00.224.156 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.232.790 I load_tensors: CPU_KLEIDIAI model buffer size =   633.02 MiB",
+          "0.00.669.155 W kleidiai: no kernel for tensor type q4_1, not accelerated by KleidiAI (kernels available for Q4_0 and Q8_0)",
+          "0.01.347.273 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |"
+        ],
+        "wall_time_sec": 1.3767727919621393
+      },
+      "l3": {
+        "debugger": "lldb",
+        "available": true,
+        "completed": true,
+        "timed_out": false,
+        "error": null,
+        "dispatch_regex": "^kai_run_matmul",
+        "wall_time_sec": 33.02,
+        "kernel_family_executed": "dotprod",
+        "hits_by_symbol": {
+          "kai_run_matmul_clamp_f32_bf16p2vlx2_bf16p2vlx2_2vlx2vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa": 2427,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1b_2vlx2vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1biasf32_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme2_dot": 31,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme_dot": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4x4_1x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 17,
+          "kai_run_matmul_clamp_f32_qai8dxp4x4_qsi8cxp4x4_16x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp4x8_qsi8cxp4x8_16x4_neon_i8mm": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4vlx4_1x4vl_sme2_sdot": 70,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod": 68,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod": 6325,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 0
+        },
+        "hits_by_family": {
+          "sme2": 2528,
+          "sme": 0,
+          "dotprod": 6410,
+          "i8mm": 0
+        },
+        "total_hits": 8938,
+        "breakpoints_requested": null,
+        "breakpoints_created": null
+      },
+      "advertised_family": "SME2",
+      "verdict": "SME2_HYBRID_DISPATCH"
+    },
+    {
+      "platform": "darwin-arm64",
+      "cpu_brand": "Apple M4 Max",
+      "isa_features": {
+        "FEAT_SME": 1,
+        "FEAT_SME2": 1,
+        "FEAT_SME2p1": 0,
+        "FEAT_SME_F64F64": 1,
+        "FEAT_SME_I16I64": 1,
+        "FEAT_I8MM": 1,
+        "FEAT_BF16": 1,
+        "FEAT_DotProd": 1,
+        "sme_max_svl_b": 64,
+        "FEAT_SVE": "absent (not exposed on Apple Silicon; SME2 ships without non-streaming SVE)"
+      },
+      "model": "/tmp/ggufs/q05.gguf",
+      "quant": "Q4_0",
+      "threads": 8,
+      "workload": "prefill_long",
+      "workload_description": "long synthetic prompt (~380 words), 1 generated token -- exercises the prefill-time (large ne11) dispatch path",
+      "n_predict": 1,
+      "prompt_preview": "The quick brown fox jumps over the lazy dog. The history of ...",
+      "env": {
+        "requested_env_overrides": {
+          "GGML_KLEIDIAI_PHASE_AWARE": "1"
+        },
+        "kleidiai_related_env": {
+          "GGML_KLEIDIAI_SME": null,
+          "GGML_TOTAL_THREADS": null,
+          "GGML_KLEIDIAI_CHUNK_MULTIPLIER": null,
+          "OMP_NUM_THREADS": null
+        }
+      },
+      "l1": {
+        "lib_path": "/tmp/llama-phase-aware/build/bin/libggml-cpu.dylib",
+        "tool_chain": "macho",
+        "available": true,
+        "error": null,
+        "kai_symbol_count": 264,
+        "kai_run_matmul_symbol_count": 17,
+        "kai_symbols_by_family": {
+          "sme2": 6,
+          "sme": 3,
+          "dotprod": 6,
+          "i8mm": 2
+        },
+        "isa_mnemonic_counts": {
+          "smstart": 13,
+          "smstop": 15,
+          "fmopa": 92,
+          "bfmopa": 36,
+          "smopa": 8
+        }
+      },
+      "l2": {
+        "available": true,
+        "command": [
+          "/tmp/llama-phase-aware/build/bin/llama-cli",
+          "-m",
+          "/tmp/ggufs/q05.gguf",
+          "-p",
+          "The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models. The quick brown fox jumps over the lazy dog. The history of artificial intelligence began in the mid twentieth century, when researchers started exploring how machines could simulate human reasoning and learning processes. Since then the field has expanded dramatically, encompassing machine learning, deep neural networks, natural language processing, computer vision, and robotics. Modern systems can now translate languages, recognize images, generate text, and even compose music with remarkable fluency. However, many open questions remain about how these systems generalize, reason, and represent knowledge internally. Researchers continue to study architectures, training methods, and evaluation benchmarks in order to better understand the capabilities and limitations of contemporary models.",
+          "-n",
+          "1",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "8",
+          "--verbose"
+        ],
+        "returncode": 0,
+        "timed_out": false,
+        "error": null,
+        "primary_kernel_feature": {
+          "q4": "SME2",
+          "q8": "SME2",
+          "f32": "SME2"
+        },
+        "sme_enabled": true,
+        "sme_variant": "SME2",
+        "sme_detail": "runtime-detected SME cores=2",
+        "buffer_type_fallback_seen": true,
+        "unsupported_tensor_types": [
+          "q4_1"
+        ],
+        "model_file_type": "Q4_0",
+        "system_info_line": "0.00.001.048 I cmn  common_param: system_info: n_threads = 8 (n_threads_batch = 8) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 |",
+        "raw_kleidiai_lines": [
+          "0.00.001.048 I cmn  common_param: system_info: n_threads = 8 (n_threads_batch = 8) / 16 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | SME = 1 | SME2 = 1 | ACCELERATE = 1 | KLEIDIAI = 1 | REPACK = 1 | ",
+          "0.00.109.173 I kleidiai: primary q4 kernel feature SME2",
+          "0.00.109.173 I kleidiai: primary q8 kernel feature SME2",
+          "0.00.109.174 I kleidiai: primary f32 kernel feature SME2",
+          "0.00.109.174 I kleidiai: SME2 enabled (runtime-detected SME cores=2)",
+          "0.00.109.175 I kleidiai: phase-aware dispatch enabled (GGML_KLEIDIAI_PHASE_AWARE=1, experimental): GEMV ops (decode) may use a hybrid SME+NEON split above sme_thread_cap instead of collapsing to NEON-only; requires SME to be enabled to have any effect",
+          "0.00.112.225 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.112.260 I load_tensors: CPU_KLEIDIAI model buffer size =     0.00 MiB",
+          "0.00.114.210 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |",
+          "0.00.231.676 D done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+          "0.00.240.411 I load_tensors: CPU_KLEIDIAI model buffer size =   633.02 MiB",
+          "0.00.683.579 W kleidiai: no kernel for tensor type q4_1, not accelerated by KleidiAI (kernels available for Q4_0 and Q8_0)",
+          "0.01.239.077 I common_memory_breakdown_print: |   - CPU_KLEIDIAI       |                  633 =   633 +       0 +       0                |"
+        ],
+        "wall_time_sec": 1.2668954170076177
+      },
+      "l3": {
+        "debugger": "lldb",
+        "available": true,
+        "completed": true,
+        "timed_out": false,
+        "error": null,
+        "dispatch_regex": "^kai_run_matmul",
+        "wall_time_sec": 49.63,
+        "kernel_family_executed": "dotprod",
+        "hits_by_symbol": {
+          "kai_run_matmul_clamp_f32_bf16p2vlx2_bf16p2vlx2_2vlx2vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_f16p1vlx2_qsi4c32p4vlx2_1vlx4vl_sme2_mopa": 1900,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1b_2vlx2vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_f32p2vlx1_f32p2vlx1biasf32_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme2_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1vlx4_qsi8cxp4vlx4_1vlx4vl_sme_mopa": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme2_dot": 35,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4vlx4_1x4vl_sme_dot": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4x4_1x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 61,
+          "kai_run_matmul_clamp_f32_qai8dxp4x4_qsi8cxp4x4_16x4_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qai8dxp4x8_qsi8cxp4x8_16x4_neon_i8mm": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4vlx4_1x4vl_sme2_sdot": 71,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod": 127,
+          "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 0,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod": 12956,
+          "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 0
+        },
+        "hits_by_family": {
+          "sme2": 2006,
+          "sme": 0,
+          "dotprod": 13144,
+          "i8mm": 0
+        },
+        "total_hits": 15150,
+        "breakpoints_requested": null,
+        "breakpoints_created": null
+      },
+      "advertised_family": "SME2",
+      "verdict": "SME2_HYBRID_DISPATCH"
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+From ef973b1578806de1ad1dcd364dc26fca3ea4d8b6 Mon Sep 17 00:00:00 2001
+From: Arm Dispatch Ledger contributors <noreply@example.invalid>
+Date: Tue, 4 Aug 2026 10:29:26 +0800
+Subject: [PATCH] ggml-cpu: kleidiai: phase-aware SME dispatch for GEMV ops
+ (opt-in)
+
+The SME thread cap (sme_thread_cap, from detect_num_smcus()) is currently
+applied the same way to every MUL_MAT shape: once nth_total exceeds the
+cap, dispatch collapses to the non-SME (NEON) kernel unconditionally
+unless the op also satisfies the existing large-batch hybrid gate
+(ne11 >= 128). Decode (token generation) is always ne11 == 1, so it can
+never satisfy that gate and therefore never reaches the SME kernel once
+more than sme_thread_cap threads are requested -- even on hardware where
+the SME kernel measurably outperforms NEON at the capped thread count
+for exactly that op shape (GEMV). See arm-dispatch-ledger results/
+SUMMARY.md and results/GROUND-TRUTH-DISPATCH.md for the measurements
+this patch answers, and the upstream issue this patch was written for:
+https://github.com/ggml-org/llama.cpp/issues/26547
+
+This adds an opt-in, default-off env var, GGML_KLEIDIAI_PHASE_AWARE=1.
+When set, a GEMV-shaped op (ne11 == 1) that has both an SME and a
+non-SME kernel slot available is let into the *existing* hybrid
+dispatch path instead of collapsing to NEON-only: the SME slot is
+capped at sme_thread_cap threads (as it already is for large-batch
+hybrid mode) and the remaining threads run the NEON kernel in
+parallel, using the identical thread-assignment code prefill hybrid
+mode already exercises. GEMM-shaped ops (prefill) are unaffected --
+the ne11 >= 128 gate is untouched for them.
+
+Also adds a one-shot GGML_LOG_WARN, mirroring the existing one-shot
+weight-type-fallback warning below, for the case this patch leaves
+alone by default: a GEMV op whose thread count exceeds sme_thread_cap
+collapsing to NEON-only, so a user without the flag set can see why
+SME went unused and what env var gets it back.
+
+Verified locally on Apple M4 Max (FEAT_SME2, sme_thread_cap=2):
+ - Builds clean with -DGGML_CPU_KLEIDIAI=ON -DGGML_METAL=OFF, no new
+   warnings on this file.
+ - llama-cli produces correct, coherent output with the flag on and
+   off, at multiple thread counts.
+ - lldb breakpoints on kai_run_matmul.*sme confirm the SME2 GEMV
+   kernel (kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4vlx4_1x4vl_sme2_sdot)
+   fires for decode at -t 4 (> sme_thread_cap=2) only when
+   GGML_KLEIDIAI_PHASE_AWARE=1 is set; zero hits with the flag unset,
+   matching the pre-patch baseline.
+
+No behavior change when the env var is unset (default).
+---
+ ggml/src/ggml-cpu/kleidiai/kleidiai.cpp | 59 +++++++++++++++++++++++--
+ 1 file changed, 56 insertions(+), 3 deletions(-)
+
+diff --git a/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp b/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
+index 1c5a459..51cc801 100644
+--- a/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
++++ b/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
+@@ -67,7 +67,11 @@ struct ggml_kleidiai_context {
+     int sme_thread_cap; // <= 0 means “SME disabled/unknown”;
+     int thread_hint;    // <= 0 means “no hint”
+     int chunk_multiplier;
+-} static ctx = { CPU_FEATURE_NONE, nullptr, nullptr, nullptr, 0, -1, 4 };
++    bool phase_aware_dispatch; // GGML_KLEIDIAI_PHASE_AWARE=1 (opt-in, default off). When set, a
++                                // GEMV-shaped op (decode, ne11 == 1) is allowed into the existing
++                                // hybrid SME+NEON split above sme_thread_cap instead of collapsing
++                                // to NEON-only. See the dispatch site in compute_forward_qx().
++} static ctx = { CPU_FEATURE_NONE, nullptr, nullptr, nullptr, 0, -1, 4, false };
+ 
+ static inline bool is_sme_family(cpu_feature f) {
+     return (f & (CPU_FEATURE_SME | CPU_FEATURE_SME2)) != CPU_FEATURE_NONE;
+@@ -201,6 +205,7 @@ static void init_kleidiai_context(void) {
+         const char *env_sme         = getenv("GGML_KLEIDIAI_SME");
+         const char *env_threads     = getenv("GGML_TOTAL_THREADS");
+         const char *env_chunk_mult  = getenv("GGML_KLEIDIAI_CHUNK_MULTIPLIER");
++        const char *env_phase_aware = getenv("GGML_KLEIDIAI_PHASE_AWARE");
+ 
+         size_t detected_smcus = 0;
+ 
+@@ -224,6 +229,16 @@ static void init_kleidiai_context(void) {
+             }
+         }
+ 
++        // Opt-in, experimental: see the ggml_kleidiai_context::phase_aware_dispatch comment above.
++        // Default off, so this patch cannot change behavior unless a caller asks for it.
++        if (env_phase_aware) {
++            bool ok = false;
++            int v = parse_uint_env(env_phase_aware, "GGML_KLEIDIAI_PHASE_AWARE", &ok);
++            if (ok && v != 0) {
++                ctx.phase_aware_dispatch = true;
++            }
++        }
++
+         // SME policy:
+         // - env unset => auto-detect SMCUs; enable SME only if detected > 0.
+         // - env=0     => force off.
+@@ -311,6 +326,13 @@ static void init_kleidiai_context(void) {
+         } else {
+             GGML_LOG_INFO("kleidiai: SME disabled\n");
+         }
++
++        if (ctx.phase_aware_dispatch) {
++            GGML_LOG_INFO("kleidiai: phase-aware dispatch enabled (GGML_KLEIDIAI_PHASE_AWARE=1, "
++                          "experimental): GEMV ops (decode) may use a hybrid SME+NEON split above "
++                          "sme_thread_cap instead of collapsing to NEON-only; requires SME to be "
++                          "enabled to have any effect\n");
++        }
+     }
+ 
+     ggml_critical_section_end();
+@@ -1101,14 +1123,45 @@ class tensor_traits : public ggml::cpu::tensor_traits {
+         if (runtime_count > 0 && nth_total > 0) {
+             min_cols_per_thread = (size_t) std::max<int64_t>(1, (int64_t)ne01 / (int64_t)nth_total);
+         }
+-        const bool too_small_for_hybrid = (min_cols_per_thread < 2) || (ne11 < 128);
++
++        // Phase-aware dispatch (opt-in, GGML_KLEIDIAI_PHASE_AWARE=1, default off). The `ne11 < 128`
++        // term below keeps small-batch work out of the hybrid split, but as a side effect it also
++        // permanently excludes decode (ne11 == 1, a GEMV) from ever reaching the SME slot once
++        // nth_total exceeds sme_thread_cap -- even though SME2 measurably wins that shape at the
++        // capped thread count (see results/SUMMARY.md: decode SME2@2thr = 327.6 tok/s vs.
++        // NEON@2 = 266.4 tok/s). When the flag is set and both an SME and a non-SME slot are
++        // available for a GEMV op, let it into the existing hybrid path below instead of collapsing
++        // to NEON-only: SME gets capped at sme_thread_cap threads and the remaining threads run
++        // NEON in parallel, via the same thread-assignment machinery prefill hybrid mode already
++        // exercises. This does not change behavior for GEMM-shaped ops (prefill) at all.
++        const bool phase_aware_gemv = ctx.phase_aware_dispatch && is_gemv &&
++                                       sme_slot != -1 && non_sme_slot != -1;
++        const bool too_small_for_hybrid = (min_cols_per_thread < 2) ||
++                                           (!phase_aware_gemv && ne11 < 128);
+ 
+         const bool hybrid_enabled = use_hybrid && !too_small_for_hybrid;
+ 
+         if (!hybrid_enabled) {
+             int chosen_slot = 0;
+             if (too_small_for_hybrid && sme_slot != -1) {
+-                chosen_slot = nth_total > sme_cap_limit && non_sme_slot != -1 ? non_sme_slot : sme_slot;
++                const bool collapses_to_neon = nth_total > sme_cap_limit && non_sme_slot != -1;
++                chosen_slot = collapses_to_neon ? non_sme_slot : sme_slot;
++
++                if (collapses_to_neon && is_gemv) {
++                    // SME is enabled and this op is GEMV-shaped (decode), but nth_total exceeds
++                    // sme_thread_cap, so dispatch collapses to the non-SME (NEON) slot and SME2
++                    // will not be used for it (see the upstream issue this patch answers). Warn
++                    // once per process so a user can see the knob that gets it back.
++                    static std::atomic<bool> warned(false);
++                    if (!warned.exchange(true)) {
++                        GGML_LOG_WARN("kleidiai: SME not used for a GEMV op (e.g. token generation) "
++                                      "because the thread count (%d) exceeds sme_thread_cap (%d); "
++                                      "use -t <= %d for generation, or set "
++                                      "GGML_KLEIDIAI_PHASE_AWARE=1 (experimental) to run SME capped "
++                                      "at sme_thread_cap alongside NEON on the remaining threads\n",
++                                      nth_total, sme_cap_limit, sme_cap_limit);
++                    }
++                }
+             } else if (runtime_count > 1 && ctx.sme_thread_cap > 0 && nth_total > ctx.sme_thread_cap) {
+                 chosen_slot = 1;
+             }
+-- 
+2.55.0
+

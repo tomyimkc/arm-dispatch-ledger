@@ -1,0 +1,776 @@
+{
+  "meta": {
+    "platform": "apple-m4-max-patched-phase-aware",
+    "cpu_brand": "Apple M4 Max",
+    "generated_at": "2026-08-04T03:54:49.357269+00:00",
+    "started_at": "2026-08-04T03:19:36.146210+00:00",
+    "elapsed_s": 2113.3,
+    "llama_bin_dir": "/tmp/llama-phase-aware/build/bin",
+    "llama_build_commit": "ef973b1",
+    "model": "/tmp/ggufs/q05.gguf",
+    "threads_axis": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "sme_modes_axis": [
+      "on",
+      "off"
+    ],
+    "reps": 5,
+    "decode_n_gen": 32,
+    "prefill_n_prompt": 256,
+    "n_cells": 20,
+    "default_thread_note": "llama.cpp's true no-flags default n_threads on this machine is 12 (hw.perflevel0.physicalcpu, the P-core count), not the total 16 physical cores -- verified via `llama-cli -v` this session.",
+    "split_phase_prompt_words": 260,
+    "split_phase_prompt_real_token_count": 261,
+    "thermal": {
+      "before": {
+        "source": "pmset -g therm",
+        "output": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+      },
+      "after": {
+        "source": "pmset -g therm",
+        "output": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+      }
+    },
+    "load_average": {
+      "before": {
+        "loadavg": {
+          "1min": 5.072265625,
+          "5min": 34.6884765625,
+          "15min": 80.72314453125
+        },
+        "uptime_line": "11:19  up 9 days, 13:17, 37 users, load averages: 5.07 34.69 80.72"
+      },
+      "after": {
+        "loadavg": {
+          "1min": 69.533203125,
+          "5min": 106.939453125,
+          "15min": 112.26171875
+        },
+        "uptime_line": "11:54  up 9 days, 13:53, 37 users, load averages: 69.53 106.94 112.26"
+      }
+    },
+    "n_retries_used": 20
+  },
+  "sweep_rows": [
+    {
+      "phase": "decode",
+      "threads": 1,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 197.39,
+        "stddev_ts": 6.376297695371505,
+        "min_ts": 187.15,
+        "max_ts": 203.583,
+        "samples_ts": [
+          203.583,
+          200.687,
+          197.39,
+          187.15,
+          193.907
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 1,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 142.076,
+        "stddev_ts": 1.3582955127659162,
+        "min_ts": 141.652,
+        "max_ts": 144.937,
+        "samples_ts": [
+          144.937,
+          142.076,
+          142.765,
+          141.652,
+          141.749
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 2,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 304.982,
+        "stddev_ts": 8.013431986358883,
+        "min_ts": 302.704,
+        "max_ts": 320.03,
+        "samples_ts": [
+          304.982,
+          320.03,
+          315.856,
+          302.704,
+          303.249
+        ]
+      },
+      "is_optimum": true
+    },
+    {
+      "phase": "decode",
+      "threads": 2,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 244.163,
+        "stddev_ts": 7.666534236537395,
+        "min_ts": 237.823,
+        "max_ts": 255.889,
+        "samples_ts": [
+          255.889,
+          249.299,
+          244.163,
+          237.823,
+          238.227
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 4,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 246.658,
+        "stddev_ts": 6.6554410447392565,
+        "min_ts": 236.197,
+        "max_ts": 250.156,
+        "samples_ts": [
+          250.156,
+          249.537,
+          236.197,
+          246.658,
+          237.622
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 4,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 278.474,
+        "stddev_ts": 6.698421926095736,
+        "min_ts": 271.268,
+        "max_ts": 288.618,
+        "samples_ts": [
+          278.474,
+          288.618,
+          271.268,
+          282.067,
+          274.815
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 8,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 149.219,
+        "stddev_ts": 10.936586190397803,
+        "min_ts": 142.268,
+        "max_ts": 170.337,
+        "samples_ts": [
+          150.731,
+          145.78,
+          142.268,
+          149.219,
+          170.337
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 8,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 151.763,
+        "stddev_ts": 4.333788504299674,
+        "min_ts": 146.245,
+        "max_ts": 158.251,
+        "samples_ts": [
+          151.557,
+          151.763,
+          146.245,
+          158.251,
+          153.787
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "agg": null,
+      "is_optimum": false
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "agg": null,
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 1,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 862.794,
+        "stddev_ts": 7.705286386630964,
+        "min_ts": 857.959,
+        "max_ts": 875.48,
+        "samples_ts": [
+          862.794,
+          862.448,
+          857.959,
+          873.831,
+          875.48
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 1,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 400.825,
+        "stddev_ts": 2.8341163878711857,
+        "min_ts": 396.474,
+        "max_ts": 403.664,
+        "samples_ts": [
+          399.681,
+          403.664,
+          400.825,
+          402.805,
+          396.474
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 2,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 1576.04,
+        "stddev_ts": 21.324905158053983,
+        "min_ts": 1548.69,
+        "max_ts": 1602.59,
+        "samples_ts": [
+          1556.73,
+          1581.87,
+          1576.04,
+          1548.69,
+          1602.59
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 2,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 787.975,
+        "stddev_ts": 6.214109002906227,
+        "min_ts": 775.318,
+        "max_ts": 790.6,
+        "samples_ts": [
+          775.318,
+          787.975,
+          790.6,
+          787.36,
+          789.691
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 4,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 1861.72,
+        "stddev_ts": 29.426717961743503,
+        "min_ts": 1832.58,
+        "max_ts": 1900.84,
+        "samples_ts": [
+          1832.58,
+          1835.43,
+          1881.61,
+          1861.72,
+          1900.84
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 4,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 1493.28,
+        "stddev_ts": 7.023949743555973,
+        "min_ts": 1486.29,
+        "max_ts": 1504.73,
+        "samples_ts": [
+          1486.29,
+          1491.65,
+          1498.56,
+          1504.73,
+          1493.28
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 8,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 2324.26,
+        "stddev_ts": 199.96435902430207,
+        "min_ts": 1972.64,
+        "max_ts": 2491.45,
+        "samples_ts": [
+          1972.64,
+          2324.26,
+          2491.45,
+          2144.14,
+          2339.98
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 8,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 2532.99,
+        "stddev_ts": 152.6115405203682,
+        "min_ts": 2293.94,
+        "max_ts": 2676.73,
+        "samples_ts": [
+          2532.99,
+          2293.94,
+          2652.85,
+          2501.39,
+          2676.73
+        ]
+      },
+      "is_optimum": true
+    },
+    {
+      "phase": "prefill",
+      "threads": 16,
+      "sme_mode": "on",
+      "agg": {
+        "n": 5,
+        "median_ts": 32.4399,
+        "stddev_ts": 7.016090845192927,
+        "min_ts": 24.5201,
+        "max_ts": 42.0527,
+        "samples_ts": [
+          25.8807,
+          24.5201,
+          33.6394,
+          32.4399,
+          42.0527
+        ]
+      },
+      "is_optimum": false
+    },
+    {
+      "phase": "prefill",
+      "threads": 16,
+      "sme_mode": "off",
+      "agg": {
+        "n": 5,
+        "median_ts": 34.0553,
+        "stddev_ts": 52.52629554248996,
+        "min_ts": 22.8,
+        "max_ts": 147.235,
+        "samples_ts": [
+          22.8,
+          35.9765,
+          34.0553,
+          28.5523,
+          147.235
+        ]
+      },
+      "is_optimum": false
+    }
+  ],
+  "sweep_errors": [
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "round": 0,
+      "error": "llama-bench exited 124 (threads=16 sme=on n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "round": 0,
+      "error": "llama-bench exited 124 (threads=16 sme=off n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "round": 1,
+      "error": "llama-bench exited 124 (threads=16 sme=on n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "round": 1,
+      "error": "llama-bench exited 124 (threads=16 sme=off n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "round": 2,
+      "error": "llama-bench exited 124 (threads=16 sme=on n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "round": 2,
+      "error": "llama-bench exited 124 (threads=16 sme=off n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "round": 3,
+      "error": "llama-bench exited 124 (threads=16 sme=on n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "round": 3,
+      "error": "llama-bench exited 124 (threads=16 sme=off n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "round": 4,
+      "error": "llama-bench exited 124 (threads=16 sme=on n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    },
+    {
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "round": 4,
+      "error": "llama-bench exited 124 (threads=16 sme=off n_prompt=0 n_gen=32)\nstdout=\nstderr=\n[crossover.py] TIMEOUT"
+    }
+  ],
+  "optima": {
+    "decode": {
+      "threads": 2,
+      "sme_mode": "on",
+      "median_ts": 304.982
+    },
+    "prefill": {
+      "threads": 8,
+      "sme_mode": "off",
+      "median_ts": 2532.99
+    }
+  },
+  "default_rows": [
+    {
+      "phase": "decode",
+      "agg": {
+        "n": 5,
+        "median_ts": 71.6302,
+        "stddev_ts": 11.176998451149576,
+        "min_ts": 59.2816,
+        "max_ts": 87.5577,
+        "samples_ts": [
+          81.7181,
+          59.2816,
+          68.1135,
+          71.6302,
+          87.5577
+        ]
+      }
+    },
+    {
+      "phase": "prefill",
+      "agg": {
+        "n": 5,
+        "median_ts": 1328.37,
+        "stddev_ts": 267.51342807754526,
+        "min_ts": 917.573,
+        "max_ts": 1607.85,
+        "samples_ts": [
+          1328.37,
+          1607.85,
+          1432.5,
+          917.573,
+          1132.06
+        ]
+      }
+    }
+  ],
+  "default_errors": [],
+  "split_phase_rows": [
+    {
+      "sme_mode": "on",
+      "decode_threads": 2,
+      "prefill_threads": 8,
+      "prompt_agg": {
+        "n": 5,
+        "median_ts": 2309.1,
+        "stddev_ts": 216.2073009868075,
+        "min_ts": 1869.4,
+        "max_ts": 2400.9,
+        "samples_ts": [
+          2400.9,
+          2377.2,
+          2253.0,
+          1869.4,
+          2309.1
+        ]
+      },
+      "gen_agg": {
+        "n": 5,
+        "median_ts": 201.8,
+        "stddev_ts": 5.822113018483927,
+        "min_ts": 199.2,
+        "max_ts": 213.5,
+        "samples_ts": [
+          201.8,
+          213.5,
+          205.5,
+          199.2,
+          200.1
+        ]
+      }
+    },
+    {
+      "sme_mode": "off",
+      "decode_threads": 2,
+      "prefill_threads": 8,
+      "prompt_agg": {
+        "n": 5,
+        "median_ts": 2552.9,
+        "stddev_ts": 31.152608237513714,
+        "min_ts": 2493.2,
+        "max_ts": 2573.4,
+        "samples_ts": [
+          2562.3,
+          2551.7,
+          2552.9,
+          2573.4,
+          2493.2
+        ]
+      },
+      "gen_agg": {
+        "n": 5,
+        "median_ts": 214.7,
+        "stddev_ts": 4.8298033086244825,
+        "min_ts": 211.4,
+        "max_ts": 223.4,
+        "samples_ts": [
+          216.2,
+          223.4,
+          211.4,
+          214.7,
+          211.9
+        ]
+      }
+    }
+  ],
+  "split_phase_errors": [],
+  "theoretical_best": {
+    "decode_threads": 2,
+    "decode_sme": "on",
+    "decode_ts": 304.982,
+    "prefill_threads": 8,
+    "prefill_sme": "off",
+    "prefill_ts": 2532.99,
+    "achievable_today": false
+  },
+  "retry_log": [
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "on",
+      "attempt": 2
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 1
+    },
+    {
+      "context": "main_sweep",
+      "phase": "decode",
+      "threads": 16,
+      "sme_mode": "off",
+      "attempt": 2
+    }
+  ]
+}

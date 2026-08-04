@@ -1,0 +1,180 @@
+<!--
+  SPDX-License-Identifier: Apache-2.0
+
+  Arm Dispatch Ledger -- GitHub Pages dashboard.
+
+  This page renders ONLY data that was committed to results/ at the time
+  the site was published (see .github/workflows/pages.yml, which copies
+  results/ into data/results/ and writes a data/manifest.json index at
+  publish time). It never fetches cross-origin, never invents a number,
+  and degrades to an honest "no data yet" state if a file is missing --
+  see app.js.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Arm Dispatch Ledger -- advertised vs. executed</title>
+  <meta name="description" content="Advertised-vs-executed kernel dispatch ledger for llama.cpp's KleidiAI CPU backend on Arm, verified with lldb/gdb breakpoints on real kernel entry points." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="hero-text">
+        <p class="eyebrow">Arm Create: AI Optimization Challenge &middot; Track 2 (Cloud AI)</p>
+        <h1>A kernel can be advertised and never execute once.</h1>
+        <p class="hero-sub">
+          This dashboard renders a <strong>dispatch ledger</strong> for <code>llama.cpp</code>'s
+          KleidiAI CPU backend on Arm: what the startup banner <em>advertises</em>, versus what
+          <code>lldb</code>/<code>gdb</code> breakpoints on the real <code>kai_run_matmul_*</code>
+          kernel entry points prove actually <em>executed</em>. Every number below comes from a
+          JSON file committed to this repository's <code>results/</code> directory &mdash; nothing
+          on this page is invented, interpolated, or fetched from elsewhere.
+        </p>
+      </div>
+      <button id="theme-toggle" type="button" class="theme-toggle" aria-pressed="false">
+        <span aria-hidden="true" class="theme-toggle-icon">&#9788;</span>
+        <span class="theme-toggle-label">Toggle theme</span>
+      </button>
+    </div>
+  </header>
+
+  <noscript>
+    <div class="noscript-banner">
+      This dashboard renders committed JSON with JavaScript. With JavaScript disabled, read the
+      raw evidence directly: <a href="data/results/dispatch-ledger-darwin-arm64.json">dispatch-ledger-darwin-arm64.json</a>,
+      <a href="data/results/SUMMARY.md">SUMMARY.md</a>, <a href="data/results/GROUND-TRUTH-DISPATCH.md">GROUND-TRUTH-DISPATCH.md</a>.
+    </div>
+  </noscript>
+
+  <main id="main">
+    <section class="summary-strip" aria-labelledby="summary-heading">
+      <h2 id="summary-heading" class="visually-hidden">Summary</h2>
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="stat-total">&ndash;</span>
+          <span class="stat-label">configurations verified (L1+L2+L3)</span>
+        </div>
+        <div class="stat-card stat-mismatch">
+          <span class="stat-value" id="stat-mismatch">&ndash;</span>
+          <span class="stat-label">silent fallbacks (advertised &ne; executed)</span>
+        </div>
+        <div class="stat-card stat-hybrid">
+          <span class="stat-value" id="stat-hybrid">&ndash;</span>
+          <span class="stat-label">hybrid dispatch (partial SME2)</span>
+        </div>
+        <div class="stat-card stat-match">
+          <span class="stat-value" id="stat-match">&ndash;</span>
+          <span class="stat-label">exact matches (advertised = executed)</span>
+        </div>
+      </div>
+      <p class="headline-sentence" id="headline-sentence">Loading the dispatch ledger&hellip;</p>
+    </section>
+
+    <section class="panel" aria-labelledby="hero-table-heading" id="hero-table-section">
+      <h2 id="hero-table-heading">Advertised vs. executed</h2>
+      <p class="panel-intro">
+        <strong>Advertised</strong> is what the startup banner and verbose log claim at model-load
+        time (L2). <strong>Executed</strong> is what a debugger breakpoint on the real kernel
+        entry points counted during inference (L3) &mdash; the only layer that proves anything ran.
+        A mismatch is marked with both an icon and a text label, not colour alone.
+      </p>
+      <div class="table-scroll">
+        <table id="hero-table">
+          <caption class="visually-hidden">Advertised vs executed kernel family, by platform, workload and thread count</caption>
+          <thead>
+            <tr>
+              <th scope="col">Platform</th>
+              <th scope="col">Threads</th>
+              <th scope="col">Workload</th>
+              <th scope="col">Advertised (L2)</th>
+              <th scope="col">Executed (L3)</th>
+              <th scope="col">Hits (advertised / other)</th>
+              <th scope="col">Verdict</th>
+            </tr>
+          </thead>
+          <tbody id="hero-table-body">
+            <tr class="loading-row"><td colspan="7">Loading dispatch-ledger JSON&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-empty" id="hero-table-empty" hidden>
+        No dispatch-ledger JSON found under <code>results/</code> at publish time. Run
+        <code>tools/verify_dispatch.py</code> and re-publish.
+      </p>
+    </section>
+
+    <section class="panel" aria-labelledby="chart-heading" id="chart-section">
+      <h2 id="chart-heading">Throughput crossover &mdash; decode vs. prefill, SME2 vs. NEON, by thread count</h2>
+      <p class="panel-intro">
+        Each chart is one workload phase on one platform: median tokens/sec (<code>tok/s</code>) at
+        each measured thread count, with <code>GGML_KLEIDIAI_SME</code> left unset (&ldquo;SME2
+        path&rdquo;, the default) versus forced off (&ldquo;NEON forced&rdquo;). The x-axis is
+        <em>ordinal</em> &mdash; thread counts are plotted evenly spaced and labelled, not to
+        linear scale &mdash; because the sweep itself is sparse (1, 2, 8, 16). Series are told apart
+        by line style and marker shape as well as colour. A numeric table backs every chart.
+      </p>
+      <div id="charts" class="chart-grid">
+        <p class="loading-note">Loading bench JSON&hellip;</p>
+      </div>
+    </section>
+
+    <section class="panel" id="figures-section" hidden aria-labelledby="figures-heading">
+      <h2 id="figures-heading">Reference figures</h2>
+      <p class="panel-intro">
+        Static <code>matplotlib</code> figures generated by <code>tools/plot_results.py</code> from
+        the same bench JSON as the chart above, included for cross-reference.
+      </p>
+      <div id="figures" class="figures-grid"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="method-heading">
+      <h2 id="method-heading">How this was verified</h2>
+      <p class="panel-intro">
+        A timing-only benchmark cannot see a silent fallback: the run still completes, still
+        prints a plausible tok/s number, and the banner still says the accelerator is enabled.
+        This project's verifier (<code>tools/verify_dispatch.py</code>) never trusts fewer than
+        three independent evidence layers:
+      </p>
+      <dl class="method-list">
+        <div>
+          <dt>L1 &mdash; static</dt>
+          <dd>Do the accelerated-kernel symbols exist in the built library at all? (<code>nm</code>/<code>otool</code>/<code>objdump</code>). Proves the kernel was <em>compiled in</em> &mdash; nothing about runtime behaviour.</dd>
+        </div>
+        <div>
+          <dt>L2 &mdash; selection</dt>
+          <dd>What does <code>llama.cpp</code>'s own verbose log say it <em>chose</em> at model-load time? Still not proof of execution.</dd>
+        </div>
+        <div>
+          <dt>L3 &mdash; dispatch</dt>
+          <dd>Did the kernel's machine code actually <em>run</em>, counted live with a debugger breakpoint on every <code>kai_run_matmul_*</code> entry point during real inference? The only layer that answers the actual question, and the one every verdict on this page is based on.</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      <a href="https://github.com/tomyimkc/arm-dispatch-ledger">tomyimkc/arm-dispatch-ledger</a>
+      &middot; Apache-2.0 &middot;
+      upstream issue <a href="https://github.com/ggml-org/llama.cpp/issues/26547">ggml-org/llama.cpp#26547</a>
+    </p>
+    <p>
+      Raw evidence: <a href="data/results/SUMMARY.md">SUMMARY.md</a>,
+      <a href="data/results/GROUND-TRUTH-DISPATCH.md">GROUND-TRUTH-DISPATCH.md</a>,
+      <a href="data/results/LEDGER.md">LEDGER.md</a>
+    </p>
+    <p class="footer-meta">
+      Data captured <span id="data-generated-at">unknown</span>. This page is generated from
+      committed JSON at publish time and performs no live benchmarking of its own.
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
