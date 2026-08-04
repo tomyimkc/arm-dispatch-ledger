@@ -5,6 +5,12 @@
 > with the full methodology, the correction history, and the evidence trail; it does not supersede
 > it.
 
+> **Prior art (2026-08-04):** Finding 2's mechanism below (the `kleidiai.cpp:209` exact-256-bit SVE
+> gate) was independently published two days before this repository existed, by a different,
+> unrelated project. We are not claiming priority on it. Finding 1 (the SME2 thread-gating below)
+> is, as far as we could verify, still original to this repository. Full disclosure and what this
+> project adds beyond the prior work: `docs/RELATED-WORK.md`.
+
 Target: `llama.cpp` @ `dbadb68eecdfb3ab0e86872d011738fc937f0364`, built
 `-DGGML_CPU_KLEIDIAI=ON`. Source file throughout: `ggml/src/ggml-cpu/kleidiai/kleidiai.cpp`.
 
@@ -236,6 +242,21 @@ Source: `results/REMEASURE-2026-08-04-QUIET.md`. This supersedes the previously 
 artifacts of the non-interleaved, contended measurement described above. **3.43× decode / 1.79×
 prefill, today, with flags `llama.cpp` already ships and zero code changes, is the honest number.**
 
+**A correction to how this section previously framed causality:** Finding 1's root cause correctly
+predicts the *qualitative* direction of this crossover (decode prefers SME2 at the capped thread
+count; prefill prefers NEON at its own natural thread count) — but the qualitative direction is not
+the same claim as "the 3.43× is caused by Finding 1," which an earlier draft of this project's
+README asserted and which is not supported by the data. A dedicated decomposition sweep (SME2
+forced on vs. off, independently of thread count) shows the **majority** of the 3.43× decode figure
+is the well-documented "fewer threads help token generation on Apple Silicon"
+memory-bandwidth/oversubscription effect — see `docs/development/token_generation_performance_tips.md`
+in upstream `llama.cpp` — and is not attributable to SME2 dispatch at all. SME2 (Finding 1) adds a
+real, smaller contribution on top at the tuned thread count, and *reduces* throughput at the default
+thread count. The full decomposition table, exact ratios, and prior-art citations live in the
+README's "Decomposition — how much of the decode win is SME2, and how much is thread tuning"
+section (this file does not duplicate the full table to avoid the two documents drifting apart on a
+number that matters).
+
 ### Why the dispatcher can't do this itself: `GGML_KLEIDIAI_SME` is process-global, read once
 
 The *kernel-family* half of the split (SME2 for decode, NEON forced for prefill, in the same
@@ -400,6 +421,13 @@ dispatch layer*.
 
 **Do not upgrade this finding's confidence beyond "architecturally derived, dispatch confirmation
 pending" until the Spark lane (or an equivalent SVE2 host) produces a real L3 trace.**
+
+**Prior art:** this exact `kleidiai.cpp:209` line and the `QK8_0`-equality reasoning above were
+published, independently, two days before this repository existed, by a different project
+(`luongs3/arm-dispatch-audit`, created 2026-08-01, this repo created 2026-08-03). We derived this
+finding from source before we were aware of that repository, but they published it first and we are
+not claiming priority. Full disclosure, verification, and what this project adds beyond that prior
+work (most notably Finding 1, which their repository does not contain): `docs/RELATED-WORK.md`.
 
 ---
 

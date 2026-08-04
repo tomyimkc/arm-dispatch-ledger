@@ -164,4 +164,166 @@ GGML_KLEIDIAI_SME=2 GGML_KLEIDIAI_PHASE_AWARE=1 ./build/bin/llama-cli -m model.g
 
 - `0001-kleidiai-phase-aware-dispatch.patch` — the patch itself (`git format-patch` output,
   applies with `git apply` or `git am`).
+- `0002-kleidiai-sme-aware-thread-default.patch` — see below.
 - `README.md` — this file.
+
+---
+
+# `0002-kleidiai-sme-aware-thread-default.patch`
+
+**Target:** `ggml-org/llama.cpp` at `dbadb68` (`common/`, `ggml/include/ggml-cpu.h`,
+`ggml/src/ggml-cpu/ggml-cpu.cpp`, `ggml/src/ggml-cpu/kleidiai/kleidiai.{h,cpp}`).
+**Status:** local, on by default, measured (see `results/AUTODEFAULTS.md`).
+
+## License / attribution
+
+Same basis as `0001` above: a derivative work of MIT-licensed `ggml-org/llama.cpp`, touching
+only files already under that project's MIT license. This repository stores the `.patch` diff
+only, never a vendored copy of the touched files.
+
+## The problem this answers (Defect A)
+
+`0001` and this repo's own measurements (`results/REMEASURE-2026-08-04-QUIET.md`) establish that
+on an SME2 CPU, decode throughput is **~2-3x higher at `n_threads == sme_thread_cap`** (2 on an
+Apple M4 Max) than at the stock default (the physical/P-core count, 12 here) — because above the
+cap, KleidiAI's SME2 GEMV kernels can't dispatch and silently fall back to slower NEON. That win
+is real, but it requires the user to already know `sme_thread_cap`, know it applies specifically
+to *generation* threads, and pass `-t 2` themselves. Nothing in the codebase does this
+automatically, so out of the box, on stock `llama.cpp`, KleidiAI-capable SME2 hardware runs
+decode at roughly a third of its achievable throughput, silently.
+
+Worse: the "obvious" hand-tuned fix (just pass `-t 2`) is a trap. Passing `-t 2` alone with no
+`-tb` also caps **prefill/batch** threads at 2 (llama.cpp's stock `-tb` default is "same as
+`-t`" — see `postprocess_cpu_params()` in `common/common.cpp`), which **collapses prefill by
+~2x** in our own measurement (`results/AUTODEFAULTS.md`: 1835 -> 976 tok/s, -47%). A doc telling
+people to "just pass `-t 2`" would be trading a decode win for a prefill regression nobody asked
+for.
+
+## The fix
+
+A small, additive, generation-only default:
+
+1. **A new public accessor**, `ggml_backend_cpu_kleidiai_sme_thread_cap()`, declared in the
+   always-compiled `ggml/include/ggml-cpu.h` (so `common/` can call it regardless of whether
+   `GGML_CPU_KLEIDIAI` is on) and implemented twice: the real one in `kleidiai.cpp` (returns
+   `ctx.sme_thread_cap` after forcing lazy init), and a `return 0;` stub in `ggml-cpu.cpp` for
+   builds without KleidiAI. Both verified to build (see "Verification" below).
+
+2. **`common_kleidiai_sme_auto_gen_threads()`** in `common/common.cpp`: if the accessor reports a
+   positive cap lower than the already-computed default, and `GGML_KLEIDIAI_AUTO_THREADS` is not
+   `0`, return the cap instead of the default (and log one `COM_INF` line saying exactly what
+   changed and why). Otherwise return the default unchanged.
+
+3. **`common_params_apply_kleidiai_auto_threads()`**, called from `common/arg.cpp` **after** all
+   four existing `postprocess_cpu_params()` calls (main, batch, speculative draft, speculative
+   draft batch) have already resolved their defaults. This ordering is the entire correctness
+   argument: `--threads-batch` inherits "same as `--threads`" by *copying* `params.cpuparams` at
+   the point `postprocess_cpu_params(params.cpuparams_batch, &params.cpuparams)` runs (line
+   ~853) — if the SME override were applied any earlier (e.g. inside `postprocess_cpu_params`
+   itself), that copy would silently propagate the SME-capped generation value into
+   `--threads-batch`/prefill too, recreating the exact `-t 2` prefill-collapse trap this patch
+   exists to avoid. Applying the override strictly afterward, and strictly only to
+   `params.cpuparams`, guarantees batch/prefill and speculative decoding always see the
+   *original*, uncapped default.
+
+4. **Only fires when the user did not pass `-t`/`--threads`.** The signal is the `< 0` "unset"
+   sentinel on `params.cpuparams.n_threads`, captured *before* `postprocess_cpu_params()` resolves
+   it (a precise signal, not the "compare against the computed default" fallback the original
+   design brief anticipated needing — the precise signal was available, so we used it).
+
+5. **Kill switch and logging.** `GGML_KLEIDIAI_AUTO_THREADS=0` disables the whole override
+   (verified to reproduce the unpatched baseline exactly — see below). When active, it always
+   logs one `COM_INF` line naming the old and new thread counts — never a silent behavior change.
+
+Diffstat: 7 files changed, 94 insertions(+), 0 deletions. No file is modified destructively;
+every change is a new function, a new declaration, or a new call site.
+
+## A note on `llama-bench` (read before citing "no-flags" numbers)
+
+**`llama-bench` does not exercise this patch's "no flags" code path**, by construction, and this
+was verified directly, not assumed. `llama-bench` never calls `postprocess_cpu_params()` or
+`common_context_params_to_llama()` — it builds its own `llama_context_params` directly and
+sources its own `-t` default straight from `common_cpu_get_num_math()`
+(`tools/llama-bench/llama-bench.cpp`, `cmd_params_defaults.n_threads`), which this patch
+intentionally does not touch (touching it would have re-broken llama-bench's own default for
+*prefill-only* test rows too, since llama-bench uses one `n_threads` value for both `-p` and `-n`
+tests in a given row — there is no `-tb` equivalent inside llama-bench). Confirmed empirically:
+`llama-bench -m q05.gguf -p 16 -n 16 -o json` reports `n_threads: 12` for both the baseline and
+the patched `llama-bench` binary with no flags passed, identically.
+
+Consequently, `results/AUTODEFAULTS.md`'s "no flags" measurements (configs 1/2/4) use
+**`llama-cli`** round-robin, not `llama-bench` — `llama-cli` is the tool that actually goes
+through `common_params_parse()` -> `postprocess_cpu_params()` ->
+`common_params_apply_kleidiai_auto_threads()` -> `common_context_params_to_llama()`, i.e. the real
+patched path a user hits by typing `llama-cli -m model.gguf -p "..."` with no `-t`. `llama-bench`
+with an *explicit* `-t` (config 3, the hand-tuned ceiling) is unaffected by this distinction and
+was cross-checked to agree with the `llama-cli` numbers within noise.
+
+## What this patch does NOT claim
+
+- It does not change anything about KleidiAI's dispatch logic itself (that is `0001`'s scope,
+  and `0001` remains a measured regression — see `results/REMEASURE-2026-08-04-QUIET.md`). This
+  patch only changes which thread count `llama-cli`/`llama-server` pick by default.
+- It does not affect `llama-bench`'s own `-t` default (see above) — only real front ends that go
+  through `common/arg.cpp`.
+- It does not claim the SME2 cap is optimal on hardware other than the one measured here (Apple
+  M4 Max, `sme_thread_cap=2`); the mechanism generalizes (it reads the cap from KleidiAI's own
+  runtime detection, not a hardcoded constant), but the *speedup magnitude* was only measured on
+  this machine.
+
+## How to apply
+
+```sh
+cd /path/to/llama.cpp   # at or near dbadb68
+git apply patches/0002-kleidiai-sme-aware-thread-default.patch
+```
+
+Verified to apply cleanly (`git apply --check`) against a **fresh, unmodified clone** of the
+`dbadb68` baseline (not just the working tree it was developed in) — see "Verification" below.
+
+## How to build and run it
+
+```sh
+cmake -S . -B build -DGGML_CPU_KLEIDIAI=ON -DGGML_METAL=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target llama-cli llama-bench -j"$(sysctl -n hw.ncpu)"
+
+# no flags: generation threads auto-default to the SME2 cap; --threads-batch/prefill unaffected
+./build/bin/llama-cli -m model.gguf -no-cnv -st --simple-io -p "..." -n 128
+
+# disable the auto-default, reproduce stock behavior exactly
+GGML_KLEIDIAI_AUTO_THREADS=0 ./build/bin/llama-cli -m model.gguf -no-cnv -st --simple-io -p "..." -n 128
+```
+
+## Verification performed locally (Apple M4 Max, `FEAT_SME2`, `sme_thread_cap=2`)
+
+- **Applies clean to a pristine checkout**: `git apply --check` and `git apply` against a fresh
+  `cp -a` of the `dbadb68` baseline (not the dev working tree), confirmed before this doc was
+  written.
+- **Builds clean both ways**: `-DGGML_CPU_KLEIDIAI=ON` and `-DGGML_CPU_KLEIDIAI=OFF`, both Release,
+  both from the freshly-patched pristine checkout above — zero errors/warnings attributed to this
+  patch's code in either configuration.
+- **Correctness**: `llama-cli` produces correct, coherent generations at the auto-selected
+  default (e.g. "The capital of France is Paris."), no crash, no assertion failure, no garbled
+  output.
+- **The auto-default actually fires, and only where intended** (`--verbose`, `system_info` line
+  and the patch's own log line):
+  - No flags: `KleidiAI SME2 detected (thread cap = 2); defaulting generation threads to 2
+    instead of 12.` -> `system_info: n_threads = 2 (n_threads_batch = 12)`. Batch/prefill
+    untouched, exactly as designed.
+  - `GGML_KLEIDIAI_AUTO_THREADS=0`, no flags: `system_info: n_threads = 12 (n_threads_batch =
+    12)` — identical to the unpatched baseline's own no-flags output, no override log line.
+  - Explicit `-t 4`: `system_info: n_threads = 4 (n_threads_batch = 4)` — no override log line;
+    user's explicit choice is never touched.
+  - Explicit `-tb 6` with no `-t`: `system_info: n_threads = 2 (n_threads_batch = 6)` — proves
+    generation and batch really are independent under this patch.
+  - `-DGGML_CPU_KLEIDIAI=OFF` build, no flags: `system_info: n_threads = 12 (n_threads_batch =
+    12)`, no KLEIDIAI feature flag in the CPU feature list, no crash — the stub path works.
+- **Symbol-level dispatch proof** (`tools/verify_dispatch.py --threads 2 --workloads
+  decode_short`, `lldb`, anchored `^kai_run_matmul` breakpoint): **`SME2_DISPATCHED`**, 5826/0
+  SME2-vs-other kernel hits, at `sme_thread_cap`, the exact value this patch auto-selects with
+  zero flags.
+- **Throughput, round-robin interleaved, `llama-cli`, n=9, decode and prefill separately**: see
+  `results/AUTODEFAULTS.md` for the full table. Headline: no-flags decode 67.8 -> 145.9 tok/s
+  (**2.15x**, matching the `-t 2` hand-tuned ceiling of 146.0 within noise) with prefill
+  essentially unchanged (1835.2 -> 1779.8, -3.0%, within noise) — versus the naive `-t 2` flag,
+  which reaches the same decode ceiling but collapses prefill by 47% (1835.2 -> 975.6).

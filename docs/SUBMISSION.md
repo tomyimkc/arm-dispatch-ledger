@@ -1,4 +1,16 @@
-# Devpost submission copy — Arm Dispatch Ledger
+# Devpost submission copy — Arm Dispatch Ledger (SUPERSEDED — do not paste this one)
+
+> **Superseded by [`docs/DEVPOST-SUBMISSION.md`](DEVPOST-SUBMISSION.md).** This draft predates
+> three corrections that now-authoritative doc includes and this one does not: (1) it never
+> mentions `patches/0002-kleidiai-sme-aware-thread-default.patch`, the auto-defaults patch that
+> is this project's actual technical implementation (`results/AUTODEFAULTS.md`); (2) it implies
+> the 3.43x tuning win follows directly from this project's own diagnosis without the
+> decomposition showing most of that win (3.95x of 6.44x) is a well-documented,
+> not-this-project's-discovery thread-oversaturation effect, and only 1.31x is genuinely SME2
+> (see README's "Decomposition" section); (3) it does not disclose that Finding 2's mechanism
+> was published two days earlier by `luongs3/arm-dispatch-audit` (`docs/RELATED-WORK.md`).
+> **Use `docs/DEVPOST-SUBMISSION.md` for the actual Devpost form.** This file is kept for
+> history/diff purposes only.
 
 Ready to paste into the Arm Create: AI Optimization Challenge Devpost form (Track 2,
 Cloud AI). Repo: https://github.com/tomyimkc/arm-dispatch-ledger (Apache-2.0).

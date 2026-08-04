@@ -1,0 +1,215 @@
+From 88c0ce351c724b53e32825ec01ad8c0a254d1e8b Mon Sep 17 00:00:00 2001
+From: Arm Dispatch Ledger <noreply@example.invalid>
+Date: Tue, 4 Aug 2026 14:31:03 +0800
+Subject: [PATCH] kleidiai: SME2-aware default for --threads (generation only)
+
+llama.cpp defaults --threads (generation) to the physical/math CPU core
+count. On an SME2 CPU, KleidiAI's SME2 GEMV kernels can only dispatch
+when n_threads <= their SME thread cap (e.g. 2 on an Apple M4 Max);
+above that cap KleidiAI silently falls back to slower NEON kernels for
+decode. This makes n_threads == sme_thread_cap the measured optimum for
+GEMV-shaped decode on SME2 hardware, but nothing sets it automatically.
+
+Add a small public accessor, ggml_backend_cpu_kleidiai_sme_thread_cap(),
+and use it in common/ to default *generation* threads to the SME cap
+when (a) KleidiAI reports SME2 with a positive thread cap, (b) that cap
+is lower than the normal default, and (c) the user did not explicitly
+pass -t/--threads. --threads-batch (prefill) is untouched by
+construction: the override is applied strictly after
+postprocess_cpu_params() has already resolved cpuparams_batch (and
+speculative decoding) from the *original* uncapped default, so nothing
+downstream ever observes the capped value except params.cpuparams
+itself.
+
+Gated by GGML_KLEIDIAI_AUTO_THREADS=0 (kill switch) and always logs one
+line when it changes the default, so the behavior is never silent.
+---
+ common/arg.cpp                          | 10 ++++++
+ common/common.cpp                       | 42 +++++++++++++++++++++++++
+ common/common.h                         | 10 ++++++
+ ggml/include/ggml-cpu.h                 |  8 +++++
+ ggml/src/ggml-cpu/ggml-cpu.cpp          |  8 +++++
+ ggml/src/ggml-cpu/kleidiai/kleidiai.cpp | 10 ++++++
+ ggml/src/ggml-cpu/kleidiai/kleidiai.h   |  6 ++++
+ 7 files changed, 94 insertions(+)
+
+diff --git a/common/arg.cpp b/common/arg.cpp
+index 305938f..6d49124 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -849,12 +849,22 @@ static bool common_params_parse_ex(int argc, char ** argv, common_params_context
+     // parse all CLI args now, so that -hf is available below for remote preset resolution
+     parse_cli_args();
+ 
++    // Captured *before* postprocessing resolves the -1 "unset" sentinel to a concrete thread
++    // count, so this is a reliable "did the user pass -t/--threads" signal.
++    const bool cpuparams_threads_was_default = params.cpuparams.n_threads < 0;
++
+     postprocess_cpu_params(params.cpuparams,       nullptr);
+     postprocess_cpu_params(params.cpuparams_batch, &params.cpuparams);
+ 
+     postprocess_cpu_params(params.speculative.draft.cpuparams,       &params.cpuparams);
+     postprocess_cpu_params(params.speculative.draft.cpuparams_batch, &params.cpuparams_batch);
+ 
++    // KleidiAI SME2-aware generation-thread default (see common_kleidiai_sme_auto_gen_threads
++    // in common.cpp). Applied *after* the four calls above so it only ever touches
++    // params.cpuparams (generation): --threads-batch/prefill and the speculative-decoding
++    // params already captured their own default from the pre-override value and are left alone.
++    common_params_apply_kleidiai_auto_threads(params, cpuparams_threads_was_default);
++
+     if (params.prompt_cache_all && (params.interactive || params.interactive_first)) {
+         throw std::invalid_argument("error: --prompt-cache-all not supported in interactive mode yet\n");
+     }
+diff --git a/common/common.cpp b/common/common.cpp
+index c941fd5..61350c9 100644
+--- a/common/common.cpp
++++ b/common/common.cpp
+@@ -309,6 +309,48 @@ void postprocess_cpu_params(common_cpu_params & cpuparams, const common_cpu_para
+     }
+ }
+ 
++// KleidiAI SME2-aware *generation* thread default.
++//
++// llama.cpp normally defaults --threads to the physical/math core count (see
++// common_cpu_get_num_math() above) -- 12 P-cores on e.g. an Apple M4 Max. On an SME2 CPU,
++// KleidiAI's SME2 GEMV kernels can only dispatch when n_threads <= their SME "thread cap"
++// (ggml_backend_cpu_kleidiai_sme_thread_cap(), typically the SME compute-unit count -- 2 on an
++// M4 Max); above that cap KleidiAI silently falls back to its NEON kernels, which is slower for
++// decode (GEMV-shaped, memory-bandwidth-bound) than the SME2 path at the low thread count. So:
++// when the cap is positive and lower than the default, and the user did not pass -t/--threads,
++// default *generation* threads to the cap instead of the core count. --threads-batch (prefill)
++// is untouched by design: it stays compute-bound-friendly with more threads -- see
++// common_params_apply_kleidiai_auto_threads() below, which is the only caller and guarantees
++// this function never runs for params.cpuparams_batch. Disable with GGML_KLEIDIAI_AUTO_THREADS=0.
++static int32_t common_kleidiai_sme_auto_gen_threads(int32_t default_n_threads) {
++    const char * env_disable = getenv("GGML_KLEIDIAI_AUTO_THREADS");
++    if (env_disable != nullptr && std::string(env_disable) == "0") {
++        return default_n_threads;
++    }
++
++    const int sme_thread_cap = ggml_backend_cpu_kleidiai_sme_thread_cap();
++    if (sme_thread_cap <= 0 || sme_thread_cap >= default_n_threads) {
++        // No SME2 (or it's not built in), or the cap isn't actually lower than the normal
++        // default: nothing to override.
++        return default_n_threads;
++    }
++
++    COM_INF("%s: KleidiAI SME2 detected (thread cap = %d); defaulting generation threads to %d "
++            "instead of %d. --threads-batch / prefill is unaffected. Set "
++            "GGML_KLEIDIAI_AUTO_THREADS=0 to disable this.\n",
++            __func__, sme_thread_cap, sme_thread_cap, default_n_threads);
++
++    return sme_thread_cap;
++}
++
++void common_params_apply_kleidiai_auto_threads(common_params & params, bool threads_was_default) {
++    if (!threads_was_default) {
++        // The user explicitly passed -t/--threads: never override their choice.
++        return;
++    }
++    params.cpuparams.n_threads = common_kleidiai_sme_auto_gen_threads(params.cpuparams.n_threads);
++}
++
+ bool parse_cpu_range(const std::string & range, bool (&boolmask)[GGML_MAX_N_THREADS]) {
+     size_t dash_loc = range.find('-');
+     if (dash_loc == std::string::npos) {
+diff --git a/common/common.h b/common/common.h
+index 919c0ea..ca544ea 100644
+--- a/common/common.h
++++ b/common/common.h
+@@ -753,6 +753,16 @@ bool parse_cpu_mask(const std::string & mask, bool(&boolmask)[GGML_MAX_N_THREADS
+ void postprocess_cpu_params(common_cpu_params & cpuparams, const common_cpu_params * role_model = nullptr);
+ bool set_process_priority(enum ggml_sched_priority prio);
+ 
++// If the active KleidiAI CPU backend reports a positive SME2 thread cap lower than the
++// already-resolved generation thread count, and the caller confirms the user did not
++// explicitly pass -t/--threads (threads_was_default == true), overwrite
++// params.cpuparams.n_threads (generation only) with that cap and log why. Call this *after*
++// postprocess_cpu_params() has resolved params.cpuparams / cpuparams_batch / speculative.*, so
++// --threads-batch (prefill) and speculative decoding -- which may have already copied the
++// generation default -- keep the original, uncapped value; only params.cpuparams is touched.
++// Disable with GGML_KLEIDIAI_AUTO_THREADS=0. No-op if threads_was_default is false.
++void common_params_apply_kleidiai_auto_threads(common_params & params, bool threads_was_default);
++
+ //
+ // String utils
+ //
+diff --git a/ggml/include/ggml-cpu.h b/ggml/include/ggml-cpu.h
+index dc6453c..a460dbd 100644
+--- a/ggml/include/ggml-cpu.h
++++ b/ggml/include/ggml-cpu.h
+@@ -101,6 +101,14 @@ extern "C" {
+     GGML_BACKEND_API int ggml_cpu_get_sve_cnt    (void);  // sve vector length in bytes
+     GGML_BACKEND_API int ggml_cpu_has_sme        (void);
+     GGML_BACKEND_API int ggml_cpu_has_sme2       (void);
++
++    // KleidiAI SME2 thread cap for this CPU (see ggml-cpu/kleidiai/kleidiai.cpp). <= 0 means
++    // "no cap": the KleidiAI CPU backend was not built in, or SME/SME2 is
++    // unavailable/undetected/disabled (e.g. GGML_KLEIDIAI_SME=0). Above this many threads,
++    // KleidiAI's SME2 GEMV kernels cannot dispatch and silently fall back to NEON. Safe to call
++    // at any time, including before model load; triggers KleidiAI's (idempotent) feature
++    // detection lazily on first call. Always defined (stubbed to 0 when KleidiAI is not built).
++    GGML_BACKEND_API int ggml_backend_cpu_kleidiai_sme_thread_cap(void);
+     // other
+     GGML_BACKEND_API int ggml_cpu_has_riscv_v    (void);
+     GGML_BACKEND_API int ggml_cpu_get_rvv_vlen   (void);  // risc-v vector length in bytes
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.cpp b/ggml/src/ggml-cpu/ggml-cpu.cpp
+index 16cc511..e566ff6 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.cpp
++++ b/ggml/src/ggml-cpu/ggml-cpu.cpp
+@@ -16,6 +16,14 @@
+ 
+ #ifdef GGML_USE_CPU_KLEIDIAI
+ #    include "kleidiai/kleidiai.h"
++#else
++// Stub so common/ can call ggml_backend_cpu_kleidiai_sme_thread_cap() unconditionally
++// (declared in ggml-cpu.h) even in builds without GGML_CPU_KLEIDIAI. The real
++// implementation lives in kleidiai/kleidiai.cpp and is only compiled in when that flag
++// is set.
++extern "C" int ggml_backend_cpu_kleidiai_sme_thread_cap(void) {
++    return 0;
++}
+ #endif
+ 
+ #ifdef GGML_USE_CPU_RISCV64_SPACEMIT
+diff --git a/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp b/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
+index 1c5a459..dca625f 100644
+--- a/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
++++ b/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
+@@ -320,6 +320,16 @@ static inline int kleidiai_sme_thread_cap() {
+     return ctx.sme_thread_cap;
+ }
+ 
++// Exported so common/ (llama-cli, llama-server, ...) can pick an SME-aware default for
++// --threads without linking against KleidiAI internals -- see
++// common_kleidiai_sme_auto_gen_threads() in common/common.cpp. Forces lazy init so it is
++// correct even when called before any KleidiAI buffer type has been requested (e.g. from
++// argument-parsing, before the model is loaded).
++int ggml_backend_cpu_kleidiai_sme_thread_cap(void) {
++    init_kleidiai_context();
++    return ctx.sme_thread_cap;
++}
++
+ static inline size_t align_up(size_t value, size_t alignment) {
+     if (alignment == 0) {
+         return value;
+diff --git a/ggml/src/ggml-cpu/kleidiai/kleidiai.h b/ggml/src/ggml-cpu/kleidiai/kleidiai.h
+index 38eac58..f0b2e8d 100644
+--- a/ggml/src/ggml-cpu/kleidiai/kleidiai.h
++++ b/ggml/src/ggml-cpu/kleidiai/kleidiai.h
+@@ -12,6 +12,12 @@ extern "C" {
+ 
+ ggml_backend_buffer_type_t ggml_backend_cpu_kleidiai_buffer_type(void);
+ 
++// Public accessor for ctx.sme_thread_cap (ensures init_kleidiai_context() has run first).
++// Declared here for documentation next to the rest of the KleidiAI public surface; the
++// GGML_BACKEND_API-exported declaration that common/ actually links against lives in
++// ggml-cpu.h so it resolves even in builds without GGML_CPU_KLEIDIAI (see ggml-cpu.cpp).
++int ggml_backend_cpu_kleidiai_sme_thread_cap(void);
++
+ #ifdef  __cplusplus
+ }
+ #endif
+-- 
+2.55.0
+

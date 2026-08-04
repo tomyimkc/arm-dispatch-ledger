@@ -1,40 +1,46 @@
 # Arm Dispatch Ledger
 
 **`llama.cpp` already has the flags to fix this. Nobody uses them, because the tool's own banner
-says the fast kernel is already running.** This project verifies that it isn't (a symbol-level
-dispatch bug in `llama.cpp`'s KleidiAI CPU backend), measures the per-phase performance cost of
-that bug, finds the exact source-level reason the dispatcher can't correct itself, patches that
-reason, measures the patch honestly — including where it falls short — and reports it upstream.
-The verifier (`tools/verify_dispatch.py`) is the *method* used throughout this arc, not the whole
-product; it ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch,
-a results dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
+says the fast kernel is already running.** This project verifies that it isn't (an undocumented
+dispatch gap in `llama.cpp`'s KleidiAI CPU backend — a real limit of its hardcoded per-chip
+thread-cap design, not a code defect), measures the per-phase performance cost of that gap, finds
+the exact source-level reason the dispatcher can't correct itself, patches that reason, measures
+the patch honestly — including where it falls short — and reports it upstream. The verifier
+(`tools/verify_dispatch.py`) is the *method* used throughout this arc, not the whole product; it
+ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch, a results
+dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
 
 **Live dashboard:** <https://tomyimkc.github.io/arm-dispatch-ledger/> — the advertised-vs-executed ledger, rendered from the committed JSON in `results/`, published by `.github/workflows/pages.yml` on every push to `main`.
+
+**Prior art / scholarly hygiene:** this project's Finding 2 mechanism turns out to have been
+published two days earlier by a different, unrelated repository. We cite it, state plainly what it
+found first, and what this project adds on top — see
+**[`docs/RELATED-WORK.md`](docs/RELATED-WORK.md)**, and read it before assuming either finding here
+is uncontested.
 
 **The optimization, re-measured 2026-08-04 on this repo's own hardware (Apple M4 Max, `llama-bench
 -r 1`, n=7, round-robin interleaved against external load, median ± stdev — full table below):**
 matching thread count to phase — `-t 2` for decode, `-t 8`/`-tb 8` for prefill, both flags
 `llama.cpp` already ships — beats the default config by **3.43x on decode (93.6 → 321.0 tok/s) and
-1.79x on prefill (1,230.3 → 2,198.1 tok/s), today, with zero code changes.** Nobody does this by
-default because of Finding 1 below: a hardcoded per-chip thread cap silently excludes decode from
-the fast kernel while the startup banner keeps claiming that kernel is in use. We also wrote and
-measured an opt-in patch (`patches/0001-kleidiai-phase-aware-dispatch.patch`) meant to recover this
-gap automatically for a user who never touches a thread flag at all — the honest, re-measured
-result is that it does **not** help: at default thread count it is **~12% slower** (93.6 → 82.5
-tok/s), a real regression outside the noise, even though the dispatch change it makes is genuine
-and symbol-level proven. See "The optimization" section below for the full before/after table, the
-patch's mechanism, the symbol-level dispatch proof, and why the dispatch change doesn't translate
-into a throughput win.
+1.79x on prefill (1,230.3 → 2,198.1 tok/s), today, with zero code changes.** Most of that decode
+number is **not** an SME2 discovery: a dedicated decomposition sweep (full breakdown in
+"Decomposition" under "The optimization" below) shows thread tuning *alone*, with SME2 forced off
+the entire time, already accounts for the majority of the total measured win — the well-documented
+"fewer threads help token generation on Apple Silicon" memory-bandwidth effect, not something this
+project found. SME2 (Finding 1 below: a hardcoded per-chip thread cap that silently excludes decode
+from the fast kernel) adds a real, smaller win on top of that at the tuned thread count, and
+measurably *hurts* at the default thread count — see the Decomposition section for the exact ratios
+and why the two effects are easy to conflate. We also wrote and measured an opt-in patch
+(`patches/0001-kleidiai-phase-aware-dispatch.patch`) meant to recover the thread-gating gap
+automatically for a user who never touches a thread flag at all — the honest, re-measured result is
+that it does **not** help: at default thread count it is **~12% slower** (93.6 → 82.5 tok/s), a
+real regression outside the noise, even though the dispatch change it makes is genuine and
+symbol-level proven. See "The optimization" section below for the full before/after table, the
+decomposition, the patch's mechanism, the symbol-level dispatch proof, and why the dispatch change
+doesn't translate into a throughput win.
 
-> **Correction (2026-08-04):** the figures above replace an earlier, wrong headline (4.4x decode,
-> and a "+57.3%" win for the patch). That original run measured the baseline and patched configs in
-> **different time windows** on a machine with 1-minute load average 66–147 from unrelated
-> concurrent agent sessions — uneven contention between the two windows manufactured a fake
-> speedup for the patch. Every throughput number in this document has since been re-measured
-> round-robin-interleaved (A,B,C,…,A,B,C,…) on the same machine under light, evenly-shared external
-> load (236–326% CPU, ~2.4–3.3 of 16 cores). Full method and retraction:
-> `results/REMEASURE-2026-08-04-QUIET.md`. This is called out here, not buried in a footnote — a
-> submission that publicly retracts its own wrong number is more credible, not less.
+*(An earlier version of the headline numbers above was wrong and has since been retracted and
+re-measured — see [Correction (2026-08-04)](#correction-2026-08-04) below for the full account.)*
 
 **The hook that started this — measured with real `lldb` breakpoints, not inferred:** at
 `llama.cpp`'s *default* thread count (physical core count — 16 on this machine), single-token
@@ -180,6 +186,11 @@ tier); **not yet confirmed by an L3 dispatch trace on real SVE2 hardware** — t
 clean run yet (see Limitations). Treat this finding as `[architecturally derived, dispatch-level
 confirmation pending]` until that lane is green.
 
+**Prior art:** this exact mechanism — the same `kleidiai.cpp:209` line, the same `QK8_0`-equality
+gate — was published two days before this repository existed by a different, unrelated project.
+We found it independently, later, and are not claiming priority. Full disclosure, dates, and what
+this project adds beyond that prior work: [`docs/RELATED-WORK.md`](docs/RELATED-WORK.md).
+
 ---
 
 ## Measured results (Apple M4 Max, macOS 27, 16 cores, `llama.cpp` @ `dbadb68`, `-DGGML_CPU_KLEIDIAI=ON`)
@@ -257,20 +268,101 @@ should be read as "this regime is unstable," not a precise point estimate.
 
 ---
 
+## Correction (2026-08-04)
+
+> The figures used throughout the "optimization" numbers in this document replace an earlier, wrong
+> headline (4.4x decode, and a "+57.3%" win for the patch). That original run measured the baseline
+> and patched configs in **different time windows** on a machine with 1-minute load average 66–147
+> from unrelated concurrent agent sessions — uneven contention between the two windows manufactured
+> a fake speedup for the patch. Every throughput number in this document has since been re-measured
+> round-robin-interleaved (A,B,C,…,A,B,C,…) on the same machine under light, evenly-shared external
+> load (236–326% CPU, ~2.4–3.3 of 16 cores). Full method and retraction:
+> `results/REMEASURE-2026-08-04-QUIET.md`.
+
+This gets its own section, not a footnote, on purpose — a submission that publicly retracts its own
+wrong number is more credible, not less. It sits here, after the real method and the real numbers
+have already been read once, rather than directly under the headline, so it doesn't crowd out the
+result itself as the second thing a reader sees — but it is still one heading away, not buried.
+
+---
+
 ## The optimization — matching thread count to phase, and what a patch can and can't fix
 
 The `bench.py` sweep above measured the phase-dependent crossover. A second, independently written
 harness (`tools/crossover.py`, its own methodology doc at `tools/crossover.md`) re-derived the same
 optima from scratch: decode optimum `threads=2, SME=on` and prefill optimum `threads=8,
 SME=off/NEON` — the same qualitative crossover as `bench.py` above. **The absolute magnitudes from
-that first `crossover.py` session are superseded** (see "Correction" near the top of this README):
-they were collected under the same uncontrolled, non-interleaved contention that manufactured the
-patch's original inflated headline number. The quiet, round-robin-interleaved re-measurement
-(`results/REMEASURE-2026-08-04-QUIET.md`) reconfirms the identical qualitative crossover — decode
-optimum at `-t 2` (93.6 → 321.0 tok/s) and prefill optimum at `-t 8` (1,230.3 → 2,198.1 tok/s) —
-with tight, non-overlapping stdev bands. Two independent tools, two independent runs, the same
-qualitative answer, now measured cleanly: **decode wants SME2 + few threads; prefill wants NEON +
-many threads.**
+that first `crossover.py` session are superseded** (see [Correction (2026-08-04)](#correction-2026-08-04)
+above): they were collected under the same uncontrolled, non-interleaved contention that
+manufactured the patch's original inflated headline number. The quiet, round-robin-interleaved
+re-measurement (`results/REMEASURE-2026-08-04-QUIET.md`) reconfirms the identical qualitative
+crossover — decode optimum at `-t 2` (93.6 → 321.0 tok/s) and prefill optimum at `-t 8` (1,230.3 →
+2,198.1 tok/s) — with tight, non-overlapping stdev bands. Two independent tools, two independent
+runs, the same qualitative answer, now measured cleanly: **decode wants SME2 + few threads; prefill
+wants NEON + many threads.**
+
+### Decomposition — how much of the decode win is SME2, and how much is thread tuning
+
+The 3.43x headline above answers "does matching thread count to phase help." It does not, by
+itself, answer "how much of that is *this project's* SME2 finding versus the well-known effect of
+simply not oversubscribing threads on Apple Silicon." Those are different claims, and conflating
+them was a real defect in an earlier draft of this document, which asserted the win existed
+"because of Finding 1" without ever isolating the two variables. A second sweep that toggles
+**both** thread count and `GGML_KLEIDIAI_SME` (forcing SME off entirely, not just changing threads)
+separates them:
+
+| configuration | decode tok/s (interleaved, n=5, same session) |
+|---|---:|
+| default threads (12), SME on | 48.0 |
+| default threads (12), SME off (NEON forced) | 59.6 |
+| `-t 2`, SME on | 309.2 |
+| `-t 2`, SME off (NEON forced) | 235.7 |
+
+| what changed | ratio | reading |
+|---|---:|---|
+| Total win: default/SME-on → `-t 2`/SME-on | **6.44x** | both levers pulled together |
+| **Thread tuning alone** (SME forced off throughout, default → `-t 2`) | **3.95x** | **the majority of the total win, and has nothing to do with SME2** |
+| SME2's contribution at `-t 2` (on vs. off, holding threads fixed) | **1.31x** | real, but the minority |
+| SME2's contribution at default threads (on vs. off, holding threads fixed) | **0.81x** | SME2 being enabled **hurts** here |
+
+**Caveat on the absolute numbers:** this decomposition sweep ran under measurably different shared-
+machine load than the quiet, n=7 sweep that produced the 93.6/321.0 tok/s headline figures above —
+its absolute tok/s values are lower across the board and should not be compared directly to the
+headline table. Per this project's own interleaving discipline, the **ratios** within this single
+interleaved session are the trustworthy part; the headline 3.43x/1.79x figures remain the
+authoritative, quiet-session numbers for "how fast is the tuned config." This sweep exists
+specifically to isolate the SME on/off variable, which the two-row headline table does not.
+
+**The honest conclusion: most of the 3.43x is not an SME2 discovery.** The majority of it —
+3.95x out of a measured 6.44x total when both levers are pulled — is the well-documented "too many
+threads hurts token generation" memory-bandwidth/oversubscription effect on Apple Silicon, and this
+project did not discover it. `llama.cpp`'s own documentation already covers it directly:
+
+> "It's extremely important that this parameter \[`-t`/`--threads`] is not too large. If your token
+> generation is extremely slow, try setting this number to 1. If this significantly improves your
+> token generation speed, then your CPU is being oversaturated..."
+> — [`docs/development/token_generation_performance_tips.md`](https://github.com/ggml-org/llama.cpp/blob/master/docs/development/token_generation_performance_tips.md), `llama.cpp` upstream (verified live 2026-08-04)
+
+The same effect is widely discussed for Apple Silicon specifically — see `llama.cpp`'s own
+[Discussion #4167, "Performance of llama.cpp on Apple Silicon M-series"](https://github.com/ggml-org/llama.cpp/discussions/4167)
+(verified live 2026-08-04; a large community benchmarking thread across M-series chips, cited here
+as evidence that Apple Silicon thread-count tuning is an actively discussed, pre-existing topic, not
+something this project surfaced) and third-party guidance such as
+["Tune llama.cpp on Apple Silicon: 7 Flags"](https://medium.com/@michael.hannecke/tuning-llama-cpp-on-apple-silicon-843f37a6c3dc)
+(verified live 2026-08-04), which warns that "more threads than P-cores hurts" on M-series chips.
+
+**What genuinely is this project's finding:** at the tuned thread count (`-t 2`), SME2 still
+contributes a real, measured **1.31x on top of** the thread-tuning win — not zero, not noise. More
+interesting than the magnitude is *why* the two effects are so easy to conflate: the SME2 dispatch
+boundary (`sme_thread_cap`, hardcoded to exactly 2 on this chip — Finding 1) happens to sit almost
+exactly at the empirically-discovered decode throughput optimum. A benchmark that only sweeps
+thread counts sees one smooth curve and cannot tell you how much of the win at its peak is SME2
+versus thread-oversubscription avoidance — they move together. Telling them apart required forcing
+`GGML_KLEIDIAI_SME` off independently of thread count, which is the same class of symbol-level
+dispatch discipline (not trusting the banner, not trusting a single-variable sweep) that Finding 1
+itself required. That is the defensible, non-obvious point here: not "we discovered the thread-
+tuning win," but "we could tell you exactly how much of it is SME2 and how much isn't, and why a
+naive benchmark can't."
 
 ### Why the dispatcher can't just do this itself
 
@@ -295,8 +387,8 @@ this project's patch targets (full mechanism and line citations: `docs/FINDINGS.
 Source: `results/REMEASURE-2026-08-04-QUIET.md` — authoritative, re-measured 2026-08-04 on a quiet,
 round-robin-interleaved host. **Supersedes** `results/OPTIMIZATION.md` §2 and the raw JSON in
 `results/crossover/` and `results/crossover/patched/`, which were collected under heavy,
-non-interleaved external load in different time windows for baseline vs. patched (see "Correction"
-near the top of this README).
+non-interleaved external load in different time windows for baseline vs. patched (see
+[Correction (2026-08-04)](#correction-2026-08-04) above).
 
 ### The patch — an honest negative result: dispatch works, throughput doesn't
 
@@ -502,6 +594,7 @@ non-TTY stdin.
 | `scripts/run_all.sh` + `scripts/lib/*.sh` | An idempotent, cache-aware, CI-ready pipeline (build → verify dispatch → bench → emit ledger) that already runs on three different Arm64 targets. |
 | **[ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)** | **Filed upstream 2026-08-04.** Both findings reported to the maintainers with reproduction commands, exact source line citations, and an offer to send the patch. Contribution back to the ecosystem, not just consumption of it. Draft and rationale retained in `docs/UPSTREAM-ISSUE.md`. |
 | `results/GROUND-TRUTH-DISPATCH.md` + `docs/FINDINGS.md` + `results/OPTIMIZATION.md` | The evidence chain behind that issue and the optimization verdict, including the documented precedent (`llama.cpp` PR #25701 added exactly this kind of silent-fallback warning for a different case) for why a `GGML_LOG_WARN` on `SILENT_FALLBACK` is a reasonable ask. |
+| [`docs/RELATED-WORK.md`](docs/RELATED-WORK.md) | Full disclosure that Finding 2's mechanism was independently published two days before this repo existed, what this project adds beyond that prior work, and an honest one-line comparison against every other Track 2 entry we're aware of — a reusable template for how a submission should handle being partially scooped. |
 | `tests/l3_gdb_groundtruth/` | A dlopen-based harness that asserts the L3 probe recovers a *known* call count. Written after our own gdb probe silently reported zero hits on the free CI lane — the exact failure mode this project exists to catch. Reusable by anyone instrumenting a dynamically-loaded kernel library. |
 | Three verify CI lanes (`.github/workflows/verify-*.yml`) | A template for a free-hosted judge-reproducible lane plus two self-hosted lanes with correctly scoped `pull_request` exclusions for physical hardware; the free lane now runs as a model matrix derived from `scripts/models.txt`. |
 
@@ -530,8 +623,8 @@ non-TTY stdin.
   **~12% slower** (93.6 → 82.5 tok/s, outside noise), and at every other thread count measured it
   is a statistical tie against the unpatched binary. No configuration found with the patch beats
   the pre-existing `-t 2` config, patch or no patch. The earlier "+57.3%" figure for this row was a
-  non-interleaved contention artifact and is retracted — see the "Correction" note near the top of
-  this README.
+  non-interleaved contention artifact and is retracted — see
+  [Correction (2026-08-04)](#correction-2026-08-04) above.
 - **The patch is Apple-only by construction** (`detect_num_smcus()`, the function that sets
   `sme_thread_cap`, is an `__APPLE__`-only code path) — it has no effect on the Neoverse-N2 free CI
   lane or the DGX Spark, neither of which has SME2.
