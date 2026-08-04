@@ -2,15 +2,21 @@
 
 Status: **FILED 2026-08-04 — [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)** (open).
 
+**Repo renamed 2026-08-04.** The issue below was filed from `tomyimkc/arm-dispatch-ledger`; that
+repository has since been renamed to **Polygraph** (`github.com/tomyimkc/polygraph` — the old URL
+301-redirects, same account, same history, nothing about the filed issue changed). This note is
+the only edit made to this file for the rename; everything below the `---` separator is left
+byte-identical to what was actually submitted to `ggml-org/llama.cpp`.
+
 This file is retained as the source of record for what was reported and why; the text below
 the `---` is verbatim what was submitted. Suggested labels were `bug`, `kleidiai`, `ARM`,
 `documentation` — triage is the maintainers' call.
 
 Everything under "Evidence" was produced by code in this repository
-(`tomyimkc/arm-dispatch-ledger`, Apache-2.0) and can be reproduced with the commands shown.
-The offer in "Suggested fix" stands: if the maintainers confirm the direction, we will send a
-PR adding the one-shot `GGML_LOG_WARN`, mirroring the precedent already in the codebase for
-the weight-type fallback.
+(`tomyimkc/arm-dispatch-ledger`, Apache-2.0 — now `tomyimkc/polygraph`) and can be reproduced
+with the commands shown. The offer in "Suggested fix" stands: if the maintainers confirm the
+direction, we will send a PR adding the one-shot `GGML_LOG_WARN`, mirroring the precedent
+already in the codebase for the weight-type fallback.
 
 ---
 

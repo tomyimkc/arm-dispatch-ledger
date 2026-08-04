@@ -1,4 +1,4 @@
-# arm-dispatch-ledger MCP dispatch advisor -- dependency list
+# polygraph MCP dispatch advisor -- dependency list
 #
 # Deliberately EMPTY. server.py implements the MCP stdio JSON-RPC transport
 # directly against the Python standard library (json, subprocess, pathlib,

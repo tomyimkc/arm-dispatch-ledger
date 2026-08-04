@@ -1,6 +1,6 @@
 <!--
 SPDX-License-Identifier: Apache-2.0
-SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+SPDX-FileCopyrightText: 2026 Polygraph contributors (project shipped as Arm Dispatch Ledger; renamed 2026-08-04)
 -->
 # Draft pull request for `ggml-org/llama.cpp`
 
@@ -37,7 +37,8 @@ this codebase) addressing the `llama.cpp`/KleidiAI maintainers directly.
 
 - Base: `ggml-org/llama.cpp@dbadb68` (the commit this was developed and measured against)
 - Patch: `patches/0001-kleidiai-phase-aware-dispatch.patch` in
-  [`tomyimkc/arm-dispatch-ledger`](https://github.com/tomyimkc/arm-dispatch-ledger),
+  [`tomyimkc/polygraph`](https://github.com/tomyimkc/polygraph) (submitted as
+  `arm-dispatch-ledger`; renamed 2026-08-04, old URL 301-redirects),
   applied via `git am` as commit `ef973b1` in a local branch
   `kleidiai-phase-aware-dispatch`
 - Diffstat: 1 file changed, 56 insertions(+), 3 deletions(-) — `ggml/src/ggml-cpu/kleidiai/kleidiai.cpp`
@@ -206,7 +207,7 @@ this patch answers the first one and the answer to the second is no.
 # Apply and build the patch (against a fresh dbadb68 checkout)
 git clone https://github.com/ggml-org/llama.cpp.git && cd llama.cpp
 git checkout dbadb68
-git am /path/to/arm-dispatch-ledger/patches/0001-kleidiai-phase-aware-dispatch.patch
+git am /path/to/polygraph/patches/0001-kleidiai-phase-aware-dispatch.patch
 cmake -S . -B build -DGGML_CPU_KLEIDIAI=ON -DGGML_METAL=OFF -DGGML_NATIVE=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ggml-cpu llama-cli llama-bench llama-tokenize -j"$(nproc)"
 
@@ -232,7 +233,7 @@ python3 tools/verify_dispatch.py --binary /path/to/llama.cpp/build/bin/llama-cli
 ```
 
 `tools/crossover.py` and `tools/verify_dispatch.py` are stdlib-only Python, part of
-[`tomyimkc/arm-dispatch-ledger`](https://github.com/tomyimkc/arm-dispatch-ledger)
+[`tomyimkc/polygraph`](https://github.com/tomyimkc/polygraph)
 (Apache-2.0); they are generic against any `llama.cpp`-family binary + GGUF, not
 specific to this patch or this machine.
 

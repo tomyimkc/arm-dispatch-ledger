@@ -15,7 +15,7 @@
 #   FORCE=1 ./scripts/setup.sh
 #
 # All build/download state lives under $CACHE_DIR (default:
-# $TMPDIR/arm-dispatch-ledger-cache), never inside the repo checkout itself
+# $TMPDIR/polygraph-cache), never inside the repo checkout itself
 # — see scripts/common.sh for why. Override CACHE_DIR, LLAMA_CPP_REF,
 # MODEL_DIR, JOBS, etc. as documented in scripts/common.sh.
 #

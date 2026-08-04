@@ -148,7 +148,7 @@ static void sme2_sgemm_adapter(const float *A, const float *B, float *C,
 #endif
 
 void arm_dispatch_print(const arm_dispatch_features *f) {
-    printf("arm-dispatch-ledger: detected CPU: %s\n", f->cpu_name);
+    printf("polygraph: detected CPU: %s\n", f->cpu_name);
     printf("  NEON=%d SME=%d SME2=%d SVE=%d SVE2=%d I8MM=%d BF16=%d DotProd=%d\n",
            f->has_neon, f->has_sme, f->has_sme2, f->has_sve, f->has_sve2,
            f->has_i8mm, f->has_bf16, f->has_dotprod);

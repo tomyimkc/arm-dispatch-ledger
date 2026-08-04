@@ -12,8 +12,9 @@ finding elsewhere in this repo — it only adds attribution this repo was missin
 
 [`luongs3/arm-dispatch-audit`](https://github.com/luongs3/arm-dispatch-audit) (Apache-2.0) was
 created **2026-08-01T18:01:43Z** — confirmed via `gh api repos/luongs3/arm-dispatch-audit` — which is
-**two days before** this repository (`tomyimkc/arm-dispatch-ledger`, created **2026-08-03T23:19:09Z**,
-same API). Its README headline:
+**two days before** this repository (`tomyimkc/polygraph`, created **2026-08-03T23:19:09Z** under
+this project's former name `arm-dispatch-ledger` (the repo has since been renamed; the old URL
+redirects), same API). Its README headline:
 
 > "Your Neoverse says SVE2. Your matmul runs neon_i8mm. An ISA dispatch audit for Arm —
 > reproducible on a free CI runner."

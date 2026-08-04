@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Copyright 2026 Arm Dispatch Ledger contributors
+SPDX-FileCopyrightText: Copyright 2026 Polygraph contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 # Crossover harness protocol — `crossover.py`

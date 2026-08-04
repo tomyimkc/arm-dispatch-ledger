@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Polygraph contributors (formerly Arm Dispatch Ledger) -->
 
 # The claims registry -- a reusable pattern for a project that has shipped a wrong number
 
@@ -206,6 +206,11 @@ building it.
       "file": "README.md",
       "match_substring": "stayed stable within ~5%",
       "reason": "qualitative rerun-to-rerun stability statement about the kernel microbenchmark (results/bench/kernel-bench-apple-m4-max.md's own caveat section), not a point-value performance claim."
+    },
+    {
+      "file": "docs/DEVPOST-SUBMISSION.md",
+      "match_substring": "within 1-2% every time",
+      "reason": "qualitative range statement (the 0002 patch reaches its own -t <cap> target within a 1-2% band across the three results/GENERALIZATION.md configs), not a single point-value performance claim with one clean source. The extractor's percentage pattern incidentally matches the range's second bound as '-2%', which is a parsing artifact of the '1-2%' range shape, not a claim needing separate registration."
     }
   ],
   "json_backed_globs": [
@@ -654,6 +659,32 @@ building it.
         "5.1x",
         "~5.1x"
       ]
+    },
+    {
+      "id": "generalization-1_5b-decode-t4",
+      "value_text": "122.1",
+      "source_file": "results/GENERALIZATION.md",
+      "note": "1.5B/Q4_0 decode, threads=4 -- the true per-model optimum, not the SME-cap default"
+    },
+    {
+      "id": "generalization-1_5b-decode-t2",
+      "value_text": "103.9",
+      "source_file": "results/GENERALIZATION.md",
+      "note": "1.5B/Q4_0 decode, threads=2 -- the SME thread cap the 0002 patch auto-selects"
+    },
+    {
+      "id": "generalization-1_5b-thread-cap-miss-pct",
+      "value_text": "17.5",
+      "source_file": "results/GENERALIZATION.md",
+      "note": "1.5B/Q4_0: threads=4 (122.1) beats the SME-cap default threads=2 (103.9) by this much",
+      "aliases": [
+        "~17.5"
+      ],
+      "compute": {
+        "op": "percent_rise",
+        "numerator": 103.9,
+        "denominator": 122.1
+      }
     }
   ]
 }

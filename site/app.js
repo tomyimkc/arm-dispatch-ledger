@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Arm Dispatch Ledger dashboard.
+// Polygraph dashboard. (Previously published as Arm Dispatch Ledger.)
 //
 // Renders ONLY data/manifest.json + the files it points at, both written by
 // .github/workflows/pages.yml at publish time from the committed results/
@@ -117,7 +117,7 @@
         return r.json();
       })
       .catch(function (err) {
-        console.warn("[arm-dispatch-ledger] could not load", path, err.message);
+        console.warn("[polygraph] could not load", path, err.message);
         return null;
       });
   }

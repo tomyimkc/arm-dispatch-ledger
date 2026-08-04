@@ -347,7 +347,7 @@ jobs:
           # named artifacts across jobs), and a per-model name is also what
           # makes each model's evidence separately downloadable/legible in
           # the Actions UI without opening the job log.
-          name: arm-dispatch-ledger-results-free-arm64-${{ matrix.model }}
+          name: polygraph-results-free-arm64-${{ matrix.model }}
           # Upload ONLY what this run generated. A bare `path: results/` also sweeps
           # up the committed Apple M4 Max results, so the "free-arm64" artifact ends
           # up containing hw-features-Darwin-arm64.txt and an M4 Max bench table --

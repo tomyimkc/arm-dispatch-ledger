@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+# SPDX-FileCopyrightText: 2026 Polygraph contributors
 #
 # demo/demo.sh -- self-contained, timed, narrated terminal walkthrough for the
 # submission video. Five beats, under 3 minutes of screen time: the hook, the
 # proof, the cost, the root cause, and the honest ending.
+#
+# Polygraph (formerly Arm Dispatch Ledger): does your software actually do what
+# it says? This demo answers that question for llama.cpp's KleidiAI CPU backend.
 #
 # THIS SCRIPT WAS REBUILT 2026-08-04 around results/REMEASURE-2026-08-04-QUIET.md,
 # which is the authoritative, round-robin-interleaved, 7-reps-per-config
@@ -97,7 +100,7 @@ find_first_existing() {
     return 1
 }
 
-CACHE_DIR_GUESS="${TMPDIR:-/tmp}/arm-dispatch-ledger-cache"
+CACHE_DIR_GUESS="${TMPDIR:-/tmp}/polygraph-cache"
 
 LLAMA_CLI="${LLAMA_CLI:-$(find_first_existing \
     "/tmp/llama.cpp/build/bin/llama-cli" \
@@ -128,7 +131,7 @@ VERIFY_DISPATCH="$REPO_ROOT/tools/verify_dispatch.py"
 DISPATCH_LEDGER_FLAG_OFF="${DISPATCH_LEDGER_FLAG_OFF:-$REPO_ROOT/results/dispatch-ledger-darwin-arm64-patched-flag-off.json}"
 DISPATCH_LEDGER_FLAG_ON="${DISPATCH_LEDGER_FLAG_ON:-$REPO_ROOT/results/dispatch-ledger-darwin-arm64-patched-flag-on.json}"
 
-SCRATCH_DIR="${SCRATCH_DIR:-${TMPDIR:-/tmp}/arm-dispatch-ledger-demo}"
+SCRATCH_DIR="${SCRATCH_DIR:-${TMPDIR:-/tmp}/polygraph-demo}"
 mkdir -p "$SCRATCH_DIR"
 
 DEFAULT_THREADS="${DEFAULT_THREADS:-8}"
@@ -275,21 +278,17 @@ DEMO_START_TS=$(date +%s)
 [[ -t 1 ]] && clear 2>/dev/null || true
 printf '%s\n' "${CYAN}${BOLD}"
 cat <<'BANNER'
-   _____                   ____  _                 __       __
-  / ___/  ____ ___         / __ \(_)________  ____ _/ /______/ /
-  \__ \  / __ `__ \       / / / / / ___/ __ \/ __ `/ __/ ___/ /_
- ___/ / / / / / / /      / /_/ / (__  ) /_/ / /_/ / /_/ /__/ __/
-/____(_)_/ /_/ /_/      /_____/_/____/ .___/\__,_/\__/\___/_/
-                                       /_/    __             __
-                        __        __         / /   ___  ____/ /___ ____  _____
-                       / /   ___ / /__  ____ / /   / _ \/ __  / __ `/ _ \/ ___/
-                      / /___/ -_) __/ / __// /___/  __/ /_/ / /_/ /  __/ /
-                     /_____/\__/\__/_/     /_____/\___/\__,_/\__, /\___/_/
-                                                             /____/
+    ____        __                             __
+   / __ \____  / /_  ______ __________ _____  / /_
+  / /_/ / __ \/ / / / / __ `/ ___/ __ `/ __ \/ __ \
+ / ____/ /_/ / / /_/ / /_/ / /  / /_/ / /_/ / / / /
+/_/    \____/_/\__, /\__, /_/   \__,_/ .___/_/ /_/
+              /____//____/          /_/
 BANNER
 printf '%s\n' "$RESET"
-narrate "Arm Dispatch Ledger -- does the SME2 kernel llama.cpp advertises actually run?"
-note "Apache-2.0 -- github.com/tomyimkc/arm-dispatch-ledger -- Arm Create: AI Optimization Challenge"
+narrate "Polygraph -- a tool that checks whether software is telling the truth."
+note "Does the SME2 kernel llama.cpp advertises actually run? Let's check."
+note "Apache-2.0 -- github.com/tomyimkc/polygraph -- Arm Create: AI Optimization Challenge"
 echo
 note "LLAMA_CLI         = ${LLAMA_CLI:-<not found>}"
 note "LLAMA_BENCH        = ${LLAMA_BENCH:-<not found>}"
@@ -550,7 +549,7 @@ pause
 # =========================================================================
 # Close
 # =========================================================================
-banner "Arm Dispatch Ledger"
+banner "Polygraph"
 narrate "The banner said SME2. The debugger proved otherwise. Tuning is a real,"
 narrate "free, 3.43x/1.79x win. Our own fix attempt was not -- and we're saying so."
 note "Apache-2.0. Filed upstream: ggml-org/llama.cpp#26547."

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+# SPDX-FileCopyrightText: 2026 Polygraph contributors
 """check_claims.py -- the consistency gate for this repo's numeric claims.
 
 This repo has twice shipped a wrong number: a fabricated "+57.3%" win (produced by

@@ -1,4 +1,21 @@
-# Arm Dispatch Ledger
+# Polygraph
+
+**Polygraph checks whether your software is telling the truth about the hardware acceleration it
+claims to use.** Point it at a binary and a workload; it attaches a debugger to the real kernel
+entry points — not a timing guess, not the startup banner — and reports whether the accelerated
+code path actually ran. **Does your software actually do what it says?** That's the question this
+tool answers, and the question the rest of this document answers for one real case: `llama.cpp`'s
+KleidiAI CPU backend on Arm.
+
+**Why "Polygraph":** a lie detector doesn't take a claim's word for it — it checks what the body
+actually did underneath it. This project does the same for a software performance claim: it
+doesn't trust the log line that says an accelerator is "enabled," it counts the real calls into
+the kernel.
+
+**Previously called Arm Dispatch Ledger.** The old GitHub URL,
+[`github.com/tomyimkc/arm-dispatch-ledger`](https://github.com/tomyimkc/arm-dispatch-ledger),
+redirects here automatically — an old link or clone still works, it just lands on this repo under
+its new name.
 
 **`llama.cpp` already has the flags to fix this. Nobody uses them, because the tool's own banner
 says the fast kernel is already running.** This project verifies that it isn't (an undocumented
@@ -10,7 +27,7 @@ the patch honestly — including where it falls short — and reports it upstrea
 ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch, a results
 dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
 
-**Live dashboard:** <https://tomyimkc.github.io/arm-dispatch-ledger/> — the advertised-vs-executed ledger, rendered from the committed JSON in `results/`, published by `.github/workflows/pages.yml` on every push to `main`.
+**Live dashboard:** <https://tomyimkc.github.io/polygraph/> — the advertised-vs-executed ledger, rendered from the committed JSON in `results/`, published by `.github/workflows/pages.yml` on every push to `main`.
 
 **Prior art / scholarly hygiene:** this project's Finding 2 mechanism turns out to have been
 published two days earlier by a different, unrelated repository. We cite it, state plainly what it
@@ -528,7 +545,7 @@ To run the same thing locally on any `aarch64` Linux box:
 
 ```bash
 sudo apt-get install -y cmake build-essential curl python3 gdb
-git clone https://github.com/<you>/arm-dispatch-ledger.git && cd arm-dispatch-ledger
+git clone https://github.com/<you>/polygraph.git && cd polygraph
 ./scripts/setup.sh      # clones+builds llama.cpp w/ KleidiAI, fetches the demo GGUF, builds kernels/
 ./scripts/run_all.sh    # correctness -> dispatch verify -> bench -> results/LEDGER.md
 ```
@@ -538,7 +555,7 @@ git clone https://github.com/<you>/arm-dispatch-ledger.git && cd arm-dispatch-le
 Requires Xcode Command Line Tools (`xcode-select --install`, for `clang` + `lldb`) and `cmake`.
 
 ```bash
-git clone https://github.com/<you>/arm-dispatch-ledger.git && cd arm-dispatch-ledger
+git clone https://github.com/<you>/polygraph.git && cd polygraph
 ./scripts/setup.sh
 ./scripts/run_all.sh
 ```
@@ -586,7 +603,7 @@ non-TTY stdin.
 | `tools/verify_dispatch.py` | Stdlib-only Python. Point it at **any** `llama.cpp`-family binary + GGUF and get a real L1/L2/L3 dispatch verdict — not specific to this project's model or machine. |
 | `tools/crossover.py` + `tools/crossover.md` | A phase-crossover benchmark harness: sweeps threads × `GGML_KLEIDIAI_SME` × phase, interleaved reps, retry-on-timeout, and reports the default / hand-tuned-split / theoretical-best configs for **any** `llama.cpp`-family binary — the tool that found and quantified the optimization this README leads with. |
 | `patches/0001-kleidiai-phase-aware-dispatch.patch` + `patches/README.md` | A minimal (56-line), opt-in, upstream-submittable `llama.cpp` patch plus its full design rationale and local verification log — apply with `git am` against `dbadb68`. Reusable as-is by anyone hitting the same GEMV/hybrid-dispatch gate, or as a worked example of how to extend KleidiAI's dispatch decision safely. |
-| `mcp/server.py` | Dependency-free MCP stdio server exposing `detect_arm_features`, `verify_dispatch`, `recommend_config`, and `explain_finding` as callable tools — so an agentic client can ask *this machine, right now* whether SME2/SVE is actually dispatching, instead of trusting a banner. Add to Claude Code with `claude mcp add arm-dispatch-ledger -- python3 mcp/server.py`; self-test with `python3 mcp/server.py --selftest`. See `mcp/README.md`. |
+| `mcp/server.py` | Dependency-free MCP stdio server exposing `detect_arm_features`, `verify_dispatch`, `recommend_config`, and `explain_finding` as callable tools — so an agentic client can ask *this machine, right now* whether SME2/SVE is actually dispatching, instead of trusting a banner. Add to Claude Code with `claude mcp add polygraph -- python3 mcp/server.py`; self-test with `python3 mcp/server.py --selftest`. See `mcp/README.md`. |
 | `kernels/` | A small, dependency-free, correctness-tested NEON/SME2/SVE2 GEMM library with a `CMakeLists.txt` that already encodes the Apple-vs-Linux `-mcpu` selection (and the SIGILL trap fix) — usable as a starting template for anyone porting compute onto Apple SME2 or Arm SVE2. |
 | `site/` + `.github/workflows/pages.yml` | A static, no-build-step dashboard (advertised-vs-executed table, phase-crossover charts, figure gallery) driven entirely off `results/*.json` via a runtime-generated manifest — new results from any of the artifacts above show up with no code change. Validated locally (`actionlint`, headless-Chrome DOM checks); not yet deployed (`has_pages=false`, nothing pushed). |
 | `scripts/models.txt` + `scripts/lib/fetch_model.sh` | A pipe-delimited model manifest (id, HF repo/file, sha256, license) plus a fetcher with single-model, model-set, and CI-matrix modes — turns "add a row" into "add a CI leg." Live-checks license (already caught and rejected a non-commercial GGUF). |

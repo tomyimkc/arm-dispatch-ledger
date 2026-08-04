@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0
- * SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+ * SPDX-FileCopyrightText: 2026 Polygraph contributors
  *
  * A fake "llama-cli"-shaped binary for the L3 lldb ground-truth test.
  *

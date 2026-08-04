@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: Copyright 2026 Arm Dispatch Ledger contributors
+# SPDX-FileCopyrightText: Copyright 2026 Polygraph contributors
 # SPDX-License-Identifier: Apache-2.0
 """bench.py -- SME2-vs-NEON dispatch benchmark harness for llama.cpp / KleidiAI.
 

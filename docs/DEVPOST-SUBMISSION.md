@@ -1,19 +1,26 @@
-# Devpost submission copy — Arm Dispatch Ledger
+# Devpost submission copy — Polygraph
 
 Paste-ready copy only. Every number below is sourced from `results/REMEASURE-2026-08-04-QUIET.md`,
-`results/AUTODEFAULTS.md`, `README.md`, and `docs/RELATED-WORK.md` in this repository.
+`results/AUTODEFAULTS.md`, `results/GENERALIZATION.md`, `README.md`, and `docs/RELATED-WORK.md` in
+this repository.
+
+> **Renamed 2026-08-04.** This project shipped the challenge as `arm-dispatch-ledger`; the repo has
+> since been renamed to **Polygraph** (same code, same history, same GitHub account —
+> `github.com/tomyimkc/polygraph`; the old URL 301-redirects). "Polygraph" names what the tool has
+> always done: it is a lie detector for software — it checks whether the accelerated code path your
+> program claims to use actually ran.
 
 ---
 
 ### FIELD: Project name
 
-Arm Dispatch Ledger
+Polygraph
 
 ---
 
 ### FIELD: Elevator pitch / tagline
 
-llama.cpp's banner says SME2 is running on Apple Silicon. At default settings it isn't. We proved it with a debugger, measured the cost, and shipped a patch that fixes it automatically.
+Polygraph: a lie detector for software. It checks with a debugger, not a timer, whether the accelerated code path your program claims to use actually runs.
 
 ---
 
@@ -95,7 +102,7 @@ To run the identical pipeline locally on any `aarch64` Linux box:
 
 ```bash
 sudo apt-get install -y cmake build-essential curl python3 gdb
-git clone https://github.com/tomyimkc/arm-dispatch-ledger.git && cd arm-dispatch-ledger
+git clone https://github.com/tomyimkc/polygraph.git && cd polygraph
 ./scripts/setup.sh      # clones+builds llama.cpp w/ KleidiAI, fetches the demo GGUF, builds kernels/
 ./scripts/run_all.sh    # correctness -> dispatch verify -> bench -> results/LEDGER.md
 ```
@@ -105,7 +112,7 @@ git clone https://github.com/tomyimkc/arm-dispatch-ledger.git && cd arm-dispatch
 Requires Xcode Command Line Tools (`xcode-select --install`, for `clang` + `lldb`) and `cmake`.
 
 ```bash
-git clone https://github.com/tomyimkc/arm-dispatch-ledger.git && cd arm-dispatch-ledger
+git clone https://github.com/tomyimkc/polygraph.git && cd polygraph
 ./scripts/setup.sh
 ./scripts/run_all.sh
 ```
@@ -135,10 +142,12 @@ Spark runner unrelated to this repo's code, so this lane is documented as best-e
 
 ## What changed after 2026-06-04
 
-This entire repository is new work created for this challenge: `tomyimkc/arm-dispatch-ledger` was
-created **2026-08-03T23:19:09Z** and every commit, finding, patch, benchmark, and line of code in
-it was produced between then and this submission. Nothing here predates the challenge window —
-there is no earlier version of this project to compare against.
+This entire repository is new work created for this challenge: `tomyimkc/polygraph` (created and
+submitted under the name `arm-dispatch-ledger`, renamed 2026-08-04 — same account, same commit
+history, old URL 301-redirects) was created **2026-08-03T23:19:09Z**, and every commit, finding,
+patch, benchmark, and line of code in it was produced between then and this submission. Nothing
+here predates the challenge window — there is no earlier version of this project to compare
+against.
 
 ## Honest limitations
 
@@ -158,11 +167,23 @@ there is no earlier version of this project to compare against.
   shows 3.95x of it is thread-oversubscription avoidance alone (SME2 forced off), a well-documented
   Apple Silicon effect this project did not discover; SME2's own contribution at the tuned thread
   count is a real but smaller 1.31x.
-- **Single model, single quant.** All throughput numbers are `Qwen2.5-0.5B-Instruct`, `Q4_0` only;
-  no `Q8_0` GGUF was available and none was fabricated from the lossy `Q4_0` file.
+- **Single model, single quant for the headline 3.43x/1.79x tuning number.** That number
+  (decode/prefill vs. the no-flags default) is `Qwen2.5-0.5B-Instruct`, `Q4_0` only. A separate
+  follow-up did test the `0002` auto-defaults patch specifically against two further configs — see
+  the next bullet — but that is still not a full model-size × quant grid, and still Qwen-family only.
 - **The `0002` patch's speedup magnitude is this machine's numbers, not a general claim** — the
   mechanism (reading the cap from KleidiAI's own runtime detection) generalizes to any SME2 CPU
   KleidiAI supports, but 2.15x/-3% was only measured on this Apple M4 Max.
+- **The `0002` patch's auto-selected thread count is not the true per-model decode optimum.** A
+  generalization study (`results/GENERALIZATION.md`) confirms the *mechanism* holds beyond the
+  original 0.5B/Q4_0 config: across the three model/quant configs tested (0.5B/Q4_0, 1.5B/Q4_0,
+  0.5B/Q8_0), the patch beats the no-flags baseline by **1.47x-3.00x decode** and reaches its own
+  `-t <cap>` target within 1-2% every time, never regressing relative to the unpatched baseline.
+  But the *specific* thread count the patch hardcodes to (the SME cap — 2 on this chip) is only the
+  true per-model decode optimum at 0.5B. At 1.5B/Q4_0, an isolated thread sweep shows decode peaks
+  at `-t 4` (122.1 tok/s), not the cap's `-t 2` (103.9 tok/s) — a real, measured **~17.5% miss**.
+  Stated plainly: the auto-defaults mechanism generalizes; the fixed SME-thread-cap heuristic does
+  not generalize to model size.
 - **`GGML_KLEIDIAI_SME` remains a process-global setting.** The theoretical best (SME2-decode +
   NEON-forced-prefill, simultaneously, in one process) stays `[NOT YET ACHIEVABLE]` with either
   patch.
@@ -180,13 +201,22 @@ llama.cpp, Arm KleidiAI, Arm SME2, Arm SVE2, Arm NEON, C, C++, Python, Bash, CMa
 
 ### FIELD: Repository URL
 
-https://github.com/tomyimkc/arm-dispatch-ledger
+https://github.com/tomyimkc/polygraph
 
 ---
 
 ### FIELD: Dashboard URL
 
-https://tomyimkc.github.io/arm-dispatch-ledger/
+https://tomyimkc.github.io/polygraph/
+
+---
+
+### FIELD: Demo video
+
+[PASTE YOUTUBE URL AFTER UPLOAD]
+
+Runtime **1:43 (103.06s)**, comfortably under the contest's 3-minute cap (`docs/VIDEO-PRODUCTION.md`).
+Captions are burned in, with a sidecar `.srt` (36 cues) also provided for the YouTube upload.
 
 ---
 

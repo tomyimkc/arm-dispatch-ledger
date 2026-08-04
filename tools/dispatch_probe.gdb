@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+# SPDX-FileCopyrightText: 2026 Polygraph contributors
 #
 # dispatch_probe.gdb -- GDB layer-3 (DISPATCH) probe for verify_dispatch.py.
 #

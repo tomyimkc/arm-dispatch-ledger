@@ -1,9 +1,9 @@
 # Submission video — production record
 
-**Deliverable:** `arm-dispatch-ledger-submission-video.mp4` — 1920×1080, H.264/AAC, 30 fps,
-**90.05 s (1:30)**, ~53 MB. Comfortably inside the contest's 3-minute cap.
+**Deliverable:** `polygraph-final.mp4` — 1920×1080, H.264/AAC, 30 fps,
+**103.06 s (1:43)**, ~59 MB. Comfortably inside the contest's 3-minute cap.
 
-Not committed to this repository: a 53 MB binary would dominate a repo whose entire point is
+Not committed to this repository: a 59 MB binary would dominate a repo whose entire point is
 small, auditable, text-based evidence. It is uploaded to YouTube and linked from the Devpost
 submission instead.
 
@@ -17,32 +17,40 @@ same discipline `tools/check_claims.py` enforces for the prose.
 ## Who it is for
 
 **General public first, contest judges second.** The one sentence a viewer should be able to
-repeat a week later is: *"He built a tool that checks whether software is telling the truth."*
+repeat a week later is: *"He built Polygraph — a tool that checks whether software is telling the
+truth."*
 
 An earlier cut opened mid-investigation and never said what the project was or why anyone should
-care — it simplified the vocabulary but kept a structure aimed at engineers. This cut fixes the
-structure, not just the words.
+care — it simplified the vocabulary but kept a structure aimed at engineers. A later cut fixed the
+vocabulary and named the product, but still opened cold on the 13 s side-by-side race before the
+viewer had any of that context. This cut fixes the position, not just the words: the presenter now
+opens by naming Polygraph and saying in one line what it does, and the race itself moves from a
+cold open to a mid-video payoff.
 
-## Structure — 13 s cold open + 5 beats x 15 s = 1:28
+## Structure — 6 beats x 15 s + a 13 s mid-video race = 1:43
 
-**0:00–0:13 — the race, no narration.** A real side-by-side: the same AI assistant, same laptop,
-same question, same seed, answering twice. The right pane finishes at **1.72 s**; the left is still
-writing at 2.40 s and lands at **3.42 s**. Both answers are byte-identical, word for word. The
-viewer feels the benefit before a single word is explained.
+**Re-cut from a version that opened cold on the 13 s race before the viewer knew what the project
+even was.** The presenter now opens by naming Polygraph and saying in one line what it does. The
+race itself is unchanged — same recording, same numbers — but it no longer plays first: it now
+lands as a mid-video payoff, right after beat 04 sets it up ("same laptop, same question — here's
+the difference") and right before beat 05 turns that same honest lens on the project's own
+numbers.
 
-| # | Said in plain English | Shown on the panel | Source |
-|---|---|---|---|
-| 01 | "That's an AI assistant running entirely on your own laptop. The slow one believes it's using your laptop's AI chip. It never did." | identical answer · before **3.42 s** · after **1.72 s (1.99x)** | `results/video/race-capture.json` |
-| 02 | "I built a tool that checks whether software is telling the truth — not whether it's fast." | benchmarks measure *how long*; this measures *what actually ran*; works on software you didn't write | `tools/verify_dispatch.py` |
-| 03 | "The answer was zero. The fast chip never ran once, while every message said it was working." | reported: enabled · actually ran: **0 times** · instead: **31,871** slow-path calls | `results/dispatch-ledger-darwin-arm64.json` |
-| 04 | "Most of the speed-up came from something people already knew. I published both numbers." | total **3.43x** · already-known trick **3.95x of it** · the chip itself **1.31x** | `results/REMEASURE-2026-08-04-QUIET.md` |
-| 05 | "The fix is sent to the maintainers. It picks the right setting by itself. The tool is free." | now automatic · **2.15x** typing speed · upstream **#26547** | `results/AUTODEFAULTS.md` |
+| # | Timing | Said in plain English | Shown on the panel | Source |
+|---|---|---|---|---|
+| 01 — intro | 0:00–0:15 | "Hi, I'm Tom, and I built Polygraph. It's a tool that checks whether software is telling the truth about your computer's hardware. I pointed it at the AI assistant on my own laptop, and what it found genuinely surprised me." | "a lie detector for software" · "did that actually run?" · "works on programs you didn't write" | — (framing beat, no measured figure shown) |
+| 02 — finding | 0:15–0:30 | "That assistant runs entirely offline. Nothing is sent to a company. It reported that it was using my laptop's AI chip, the part built to make this fast. Polygraph watched that chip and counted. It never ran. Not once." | reported: enabled · actually ran: **0 times** · instead: **31,871** slow-path calls | `results/dispatch-ledger-darwin-arm64.json` |
+| 03 — how it works | 0:30–0:45 | "Here's why nobody caught this. Almost every test measures how long something took, and the time looks perfectly normal either way. Polygraph doesn't measure time. It measures what actually ran, down to the individual chip instructions." | benchmarks measure *how long*; this measures *what actually ran*; works on software you didn't write | `tools/verify_dispatch.py` |
+| 04 — the fix | 0:45–1:00 | "Two hidden rules inside the code were quietly ruling it out. So I wrote a fix that picks the right setting by itself. No settings for you to learn. Same laptop, same question — here's the difference." | "two hidden rules quietly ruled the chip out" · "the fix picks the setting by itself" · "watch: same laptop, before and after" | `results/AUTODEFAULTS.md` |
+| — race | 1:00–1:13 (13 s, no narration) | *(silent — beat 04's line carries it)* | identical answer · before **3.42 s** · after **1.72 s (1.99x)** | `results/video/race-capture.json` |
+| 05 — honesty | 1:13–1:28 | "Then I turned Polygraph on my own claim. Most of that speed-up came from something people already knew about. The chip itself added about thirty percent. I published both numbers, including the one that makes my result look smaller." | total **3.43x** · already-known trick **3.95x of it — not mine** · the chip itself **1.31x — the real part** | `results/REMEASURE-2026-08-04-QUIET.md` |
+| 06 — close | 1:28–1:43 | "The fix is written and sent to the people who maintain that software. And Polygraph is free. Point it at anything that claims to use your hardware, and it will tell you whether that's actually true." | "sent upstream · llama.cpp #26547" · "free and open source" · "point it at anything that claims to use your chip" | `results/AUTODEFAULTS.md` |
 
 Jargon kept off the soundtrack entirely: `ne11`, `kai_run_matmul`, KleidiAI, SME2, GEMV, dispatch,
 thread cap, tokens/sec. Each has a plain stand-in ("your laptop's AI chip", "chip instructions",
 "hidden rule", "how fast it types").
 
-## The cold-open race is measured, not staged
+## The mid-video race is measured, not staged
 
 `tools/capture_race.py` streams both binaries' stdout and timestamps **every character as it
 actually arrives**. `results/video/race-capture.json` is that recording; the video's typing speed
@@ -94,7 +102,7 @@ reference portrait (on disk)
 Working tree: `/private/tmp/armledger-video-20260804/`
 - `gen/scenes.json` — the single source of truth: per-beat speech, expression, panel cards, base frame
 - `gen/generate.py` — submits and polls the clip generations, downloads results
-- `remotion/ArmDispatchLedger.tsx` — the composition
+- `remotion/Polygraph.tsx` — the composition
 - `remotion/story.json` — generated from `scenes.json`; what the renderer consumes
 
 ### One deliberate deviation from the reference pipeline
@@ -110,7 +118,7 @@ module docstring.
 
 ## Captions
 
-Burned-in captions plus a sidecar `.srt` (35 cues) ship with the video.
+Burned-in captions plus a sidecar `.srt` (36 cues) ship with the video.
 
 **The display text is authored, not transcribed.** `faster-whisper` was run over each clip, but
 only its *timings* are used — the ASR mangles exactly the vocabulary this video is about
@@ -152,8 +160,8 @@ Requires an xAI API key at `~/.grok/auth.json`, Node ≥ 20, and ffmpeg.
 ```bash
 cd /private/tmp/armledger-video-20260804
 python3 gen/generate.py                 # skips clips already downloaded
-cd remotion && npx remotion render index.ts ArmDispatchLedger \
-    out/arm-dispatch-ledger.mp4 --codec h264 --audio-codec aac --crf 18 --pixel-format yuv420p
+cd remotion && npx remotion render index.ts Polygraph \
+    out/polygraph-final.mp4 --codec h264 --audio-codec aac --crf 18 --pixel-format yuv420p
 ```
 
 Clip generation is idempotent — existing `gen/output/*-raw.mp4` files are skipped, so a re-run
@@ -163,7 +171,7 @@ only fills gaps.
 
 | Rule | Status |
 |---|---|
-| Under 3 minutes | 1:30 ✅ |
+| Under 3 minutes | 1:43 ✅ |
 | Publicly visible on YouTube / Vimeo / Youku | to upload before submitting |
 | Shows the project functioning on the device it was built for | on-screen figures are the measured M4 Max results; the `lldb` and `llama-bench` runs behind them are reproducible via `demo/demo.sh` |
 | No third-party trademarks | none used |

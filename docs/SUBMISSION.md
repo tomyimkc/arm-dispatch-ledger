@@ -8,7 +8,10 @@
 > decomposition showing most of that win (3.95x of 6.44x) is a well-documented,
 > not-this-project's-discovery thread-oversaturation effect, and only 1.31x is genuinely SME2
 > (see README's "Decomposition" section); (3) it does not disclose that Finding 2's mechanism
-> was published two days earlier by `luongs3/arm-dispatch-audit` (`docs/RELATED-WORK.md`).
+> was published two days earlier by `luongs3/arm-dispatch-audit` (`docs/RELATED-WORK.md`). It
+> also predates the project's 2026-08-04 rename from **Arm Dispatch Ledger** to **Polygraph**
+> (`github.com/tomyimkc/polygraph`; the old URL 301-redirects) — every reference to the old name
+> and old URL below is left as-is, since this file is retained for history/diff purposes only.
 > **Use `docs/DEVPOST-SUBMISSION.md` for the actual Devpost form.** This file is kept for
 > history/diff purposes only.
 

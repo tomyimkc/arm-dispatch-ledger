@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+# SPDX-FileCopyrightText: 2026 Polygraph contributors
 #
 # Ground-truth test for the L3 gdb dispatch probe (Linux/aarch64 only).
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Arm Dispatch Ledger contributors
-"""arm-dispatch-ledger MCP dispatch advisor.
+# Copyright 2026 Polygraph contributors
+"""polygraph MCP dispatch advisor.
 
 A dependency-free, stdio-transport MCP (Model Context Protocol) server that
 exposes this project's ARM dispatch findings as callable tools for an
@@ -68,7 +68,7 @@ SERVER_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SERVER_DIR.parent
 RESULTS_DIR = REPO_ROOT / "results"
 
-SERVER_NAME = "arm-dispatch-ledger"
+SERVER_NAME = "polygraph"
 SERVER_VERSION = "0.1.0"
 MCP_PROTOCOL_VERSION_FALLBACK = "2024-11-05"
 
@@ -295,7 +295,7 @@ def verify_dispatch(args: Dict[str, Any]) -> Dict[str, Any]:
                          actually executed.
 
     This exact three-tier method, and its result table, is what Finding 1
-    ('Arm Dispatch Ledger' Finding 1) is built on.
+    ('Polygraph' Finding 1) is built on.
     """
     binary = args.get("binary") or os.environ.get("ARM_DISPATCH_LLAMA_CLI")
     model = args.get("model") or os.environ.get("ARM_DISPATCH_MODEL")
@@ -960,7 +960,7 @@ _TOOLS_BY_NAME = {t["name"]: t for t in TOOLS}
 def _log(msg: str) -> None:
     """Diagnostic logging MUST go to stderr -- stdout is the JSON-RPC
     channel and any stray byte there corrupts the stream for the client."""
-    print(f"[arm-dispatch-ledger mcp] {msg}", file=sys.stderr, flush=True)
+    print(f"[polygraph mcp] {msg}", file=sys.stderr, flush=True)
 
 
 def _send(obj: Dict[str, Any]) -> None:

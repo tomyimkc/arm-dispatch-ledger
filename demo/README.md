@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Polygraph contributors -->
 
 # Recording the submission video
 
@@ -27,7 +27,7 @@ are **retracted** — re-record from this version of the script.
 ## 1. One-time setup
 
 ```bash
-cd arm-dispatch-ledger
+cd polygraph
 ./scripts/setup.sh          # builds llama.cpp (-DGGML_CPU_KLEIDIAI=ON),
                              # fetches the demo GGUF, builds kernels/
 ```
@@ -64,14 +64,14 @@ evidence from `results/`. To get the live version:
 # Fresh clone at (or near) llama.cpp @ dbadb68, separate from the baseline build
 git clone https://github.com/ggml-org/llama.cpp /tmp/llama-phase-aware
 cd /tmp/llama-phase-aware
-git apply /path/to/arm-dispatch-ledger/patches/0001-kleidiai-phase-aware-dispatch.patch
+git apply /path/to/polygraph/patches/0001-kleidiai-phase-aware-dispatch.patch
 cmake -S . -B build -DGGML_CPU_KLEIDIAI=ON -DGGML_METAL=OFF -DGGML_NATIVE=ON \
     -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ggml-cpu llama-cli llama-bench -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 ```
 
 `demo.sh` looks for this at `/tmp/llama-phase-aware/build/bin/{llama-cli,llama-bench}` (and the
-matching `$TMPDIR/arm-dispatch-ledger-cache/...` path) automatically; override with
+matching `$TMPDIR/polygraph-cache/...` path) automatically; override with
 `LLAMA_CLI_PATCHED` / `LLAMA_BENCH_PATCHED` if you built it elsewhere. See
 `patches/README.md` for the full patch rationale and what it does and does not claim.
 
@@ -162,13 +162,13 @@ brew install asciinema        # macOS
 # or: pip install asciinema   # anywhere with Python
 
 # Record
-asciinema rec arm-dispatch-ledger-demo.cast -c "./demo/demo.sh"
+asciinema rec polygraph-demo.cast -c "./demo/demo.sh"
 
 # Play it back locally to check it before sharing
-asciinema play arm-dispatch-ledger-demo.cast
+asciinema play polygraph-demo.cast
 
 # Optionally publish for a shareable link
-asciinema upload arm-dispatch-ledger-demo.cast
+asciinema upload polygraph-demo.cast
 ```
 
 Notes specific to this script:

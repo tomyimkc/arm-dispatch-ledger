@@ -1,6 +1,6 @@
 <!--
 SPDX-License-Identifier: Apache-2.0
-SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+SPDX-FileCopyrightText: 2026 Polygraph contributors (formerly Arm Dispatch Ledger)
 -->
 
 # `0001-kleidiai-phase-aware-dispatch.patch`
@@ -133,7 +133,7 @@ GGML_KLEIDIAI_SME=2 GGML_KLEIDIAI_PHASE_AWARE=1 ./build/bin/llama-cli -m model.g
   at `-t 8` and `-t 16` (e.g. "The capital of France is Paris." both ways). No crash, no
   assertion failure, no garbled output, in every run across this verification pass.
 - **Dispatch, flag OFF, `-t 4`, decode** (`lldb`, anchored `^kai_run_matmul` breakpoint,
-  auto-continue, per-symbol hit counts via `arm-dispatch-ledger/tools/dispatch_probe.lldb`):
+  auto-continue, per-symbol hit counts via `polygraph/tools/dispatch_probe.lldb`):
   `kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4vlx4_1x4vl_sme2_sdot` (the Q4_0 SME2 GEMV
   kernel) hit count **0**; total hits **15936** — matches
   `results/GROUND-TRUTH-DISPATCH.md`'s independently-measured baseline exactly

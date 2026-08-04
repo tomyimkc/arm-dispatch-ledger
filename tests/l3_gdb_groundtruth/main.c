@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0
- * SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+ * SPDX-FileCopyrightText: 2026 Polygraph contributors
  *
  * dlopen's the fake backend AFTER process start -- reproducing ggml's backend
  * loading, which is exactly why a pre-`run` `rbreak` instruments nothing.

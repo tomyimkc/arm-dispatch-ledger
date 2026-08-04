@@ -12,7 +12,7 @@ extern "C" {
 /*
  * scalar_ref -- the correctness oracle for every other kernel in this repo.
  *
- * Matrix convention used EVERYWHERE in arm-dispatch-ledger/kernels:
+ * Matrix convention used EVERYWHERE in polygraph/kernels:
  *   A is M x K, row-major (row stride K).
  *   B is K x N, row-major (row stride N).
  *   C is M x N, row-major (row stride N).

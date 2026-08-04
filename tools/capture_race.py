@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture real per-token arrival timings from both binaries for the video's cold-open race.
+"""Capture real per-token arrival timings from both binaries for Polygraph's mid-video race.
 
 Runs the SAME prompt with the SAME seed on the stock llama.cpp build and on the build carrying
 patches/0002 (SME2-aware thread default), streaming stdout and timestamping every token as it

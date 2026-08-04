@@ -277,7 +277,7 @@ observations rather than a fresh (in that run, non-functional) `lldb` attach.
 ## 8. How to reproduce
 
 ```bash
-cd /Users/tom/Documents/GitHub/arm-dispatch-ledger
+cd /Users/tom/Documents/GitHub/polygraph
 python3 tools/bench.py \
     --llama-bin-dir /tmp/llama.cpp/build/bin \
     --model /tmp/ggufs/q05.gguf \

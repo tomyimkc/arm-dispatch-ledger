@@ -29,7 +29,7 @@ source "$LIB_DIR/../common.sh"
 : "${FORCE:=0}"
 
 STAGE="build_llamacpp"
-STAMP_FILE="$LLAMA_CPP_DIR/.arm-dispatch-ledger-build-stamp"
+STAMP_FILE="$LLAMA_CPP_DIR/.polygraph-build-stamp"
 # Stamp encodes everything that would require a rebuild if it changed.
 STAMP_WANT="ref=$LLAMA_CPP_REF cmake_build_type=Release kleidiai=ON targets=llama-cli,llama-bench"
 

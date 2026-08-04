@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * kernel_test -- correctness oracle runner for arm-dispatch-ledger/kernels.
+ * kernel_test -- correctness oracle runner for polygraph/kernels.
  *
  * Every kernel is checked against the scalar reference (scalar_ref.c) across
  * several shapes, INCLUDING sizes that are not a multiple of any kernel's

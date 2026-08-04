@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Polygraph contributors -->
 
-# Demo shot list — Arm Dispatch Ledger (target: under 3:00 total)
+# Demo shot list — Polygraph (target: under 3:00 total)
 
 **Rebuilt 2026-08-04 around `results/REMEASURE-2026-08-04-QUIET.md`**, the authoritative,
 round-robin-interleaved, 7-reps-per-config re-measurement of this project's throughput claims.
@@ -42,7 +42,7 @@ voice-over. Silence is also a completely acceptable choice.
 
 ## Before recording
 
-1. `cd arm-dispatch-ledger` and confirm `demo/demo.sh` finds your build:
+1. `cd polygraph` and confirm `demo/demo.sh` finds your build:
    ```bash
    LLAMA_CLI=... LLAMA_BENCH=... MODEL_PATH=... ./demo/demo.sh   # or rely on the built-in
                                                                   # /tmp candidates -- see demo/README.md
@@ -70,11 +70,13 @@ voice-over. Silence is also a completely acceptable choice.
 
 ### Title (0:00–0:07, ~7s)
 
-**Screen:** ASCII banner + repo one-liner + the resolved config (`LLAMA_CLI=...`,
-`LLAMA_BENCH=...`, `MODEL_PATH=...`, `LLAMA_CLI_PATCHED=...`, `DEFAULT_THREADS=...`).
+**Screen:** ASCII banner reading "Polygraph" + the one-line framing + the resolved config
+(`LLAMA_CLI=...`, `LLAMA_BENCH=...`, `MODEL_PATH=...`, `LLAMA_CLI_PATCHED=...`,
+`DEFAULT_THREADS=...`).
 
-**Say:** *"Arm Dispatch Ledger — does the SME2 kernel llama.cpp advertises actually run?
-Apache-2.0, built for the Arm Create: AI Optimization Challenge."*
+**Say:** *"Polygraph — a tool that checks whether software is telling the truth. Does the SME2
+kernel llama.cpp advertises actually run? Let's check. Apache-2.0, built for the Arm Create: AI
+Optimization Challenge."*
 
 ---
 
@@ -208,7 +210,7 @@ one part of this video most hackathon submissions structurally cannot include.
 
 ### Close (2:58–3:00, ~2s buffer, text only)
 
-**Screen:** final banner — *"Arm Dispatch Ledger"*.
+**Screen:** final banner — *"Polygraph"*.
 
 **Say:** *"The banner said SME2. The debugger proved otherwise. Tuning is a real, free, three
 point four three x, one point seven nine x win. Our own fix attempt was not — and we're saying

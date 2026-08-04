@@ -1,7 +1,8 @@
 <!--
   SPDX-License-Identifier: Apache-2.0
 
-  Arm Dispatch Ledger -- GitHub Pages dashboard.
+  Polygraph -- GitHub Pages dashboard.
+  (Previously published as Arm Dispatch Ledger; the old repo URL redirects here.)
 
   This page renders ONLY data that was committed to results/ at the time
   the site was published (see .github/workflows/pages.yml, which copies
@@ -16,7 +17,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
-  <title>Arm Dispatch Ledger -- advertised vs. executed</title>
+  <title>Polygraph -- advertised vs. executed</title>
   <meta name="description" content="Advertised-vs-executed kernel dispatch ledger for llama.cpp's KleidiAI CPU backend on Arm, verified with lldb/gdb breakpoints on real kernel entry points." />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -26,6 +27,7 @@
   <header class="hero">
     <div class="hero-inner">
       <div class="hero-text">
+        <p class="brand-mark">Polygraph <span class="brand-tagline">&mdash; does your software actually do what it says?</span></p>
         <p class="eyebrow">Arm Create: AI Optimization Challenge &middot; Track 2 (Cloud AI)</p>
         <h1>A kernel can be advertised and never execute once.</h1>
         <p class="hero-sub">
@@ -209,7 +211,7 @@
 
   <footer class="site-footer">
     <p>
-      <a href="https://github.com/tomyimkc/arm-dispatch-ledger">tomyimkc/arm-dispatch-ledger</a>
+      <a href="https://github.com/tomyimkc/polygraph">tomyimkc/polygraph</a>
       &middot; Apache-2.0 &middot;
       upstream issue <a href="https://github.com/ggml-org/llama.cpp/issues/26547">ggml-org/llama.cpp#26547</a>
     </p>
@@ -224,6 +226,9 @@
     <p class="footer-meta">
       Data captured <span id="data-generated-at">unknown</span>. This page is generated from
       committed JSON at publish time and performs no live benchmarking of its own.
+    </p>
+    <p class="footer-meta">
+      Previously published as Arm Dispatch Ledger; the old GitHub URL redirects here automatically.
     </p>
   </footer>
 

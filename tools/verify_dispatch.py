@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
+# SPDX-FileCopyrightText: 2026 Polygraph contributors
 """verify_dispatch.py -- the symbol-level KleidiAI dispatch verifier.
 
 THE QUESTION THIS TOOL ANSWERS

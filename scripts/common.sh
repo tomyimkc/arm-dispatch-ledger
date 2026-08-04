@@ -86,7 +86,7 @@ export REPO_ROOT
 # does not own, and CI runners can point CACHE_DIR at their own ephemeral
 # temp dir (e.g. $RUNNER_TEMP) for actions/cache without touching the
 # checkout at all.
-: "${CACHE_DIR:=${TMPDIR:-/tmp}/arm-dispatch-ledger-cache}"
+: "${CACHE_DIR:=${TMPDIR:-/tmp}/polygraph-cache}"
 CACHE_DIR="${CACHE_DIR%/}"
 export CACHE_DIR
 

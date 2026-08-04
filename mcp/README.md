@@ -1,4 +1,4 @@
-# arm-dispatch-ledger MCP server
+# polygraph MCP server
 
 A dependency-free MCP (Model Context Protocol) server that turns this
 project's two verified findings about llama.cpp's KleidiAI CPU backend into
@@ -32,7 +32,7 @@ of valid ids instead of silently picking one.
 **Claude Code** (CLI, run from the repo root):
 
 ```bash
-claude mcp add arm-dispatch-ledger -- python3 "$(pwd)/mcp/server.py"
+claude mcp add polygraph -- python3 "$(pwd)/mcp/server.py"
 ```
 
 **Claude Desktop / Cursor** (edit `claude_desktop_config.json` or
@@ -41,9 +41,9 @@ claude mcp add arm-dispatch-ledger -- python3 "$(pwd)/mcp/server.py"
 ```json
 {
   "mcpServers": {
-    "arm-dispatch-ledger": {
+    "polygraph": {
       "command": "python3",
-      "args": ["/absolute/path/to/arm-dispatch-ledger/mcp/server.py"]
+      "args": ["/absolute/path/to/polygraph/mcp/server.py"]
     }
   }
 }

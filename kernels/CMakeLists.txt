@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# arm-dispatch-ledger/kernels -- static library + kernel_test + kernel_bench.
+# polygraph/kernels -- static library + kernel_test + kernel_bench.
 #
 # Compiler-flag rationale (see the top-level README's "CRITICAL COMPILER
 # FACT"): on Apple Silicon, '-march=armv9-a+sme2' produces a binary that
@@ -37,7 +37,7 @@ target_include_directories(arm_dispatch_kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(arm_dispatch_kernels PUBLIC m)
 
 if(APPLE)
-  message(STATUS "arm-dispatch-ledger/kernels: Apple build -- using -mcpu=apple-m4 "
+  message(STATUS "polygraph/kernels: Apple build -- using -mcpu=apple-m4 "
                  "(NOT -march=armv9-a+sme2, which SIGILLs on Apple Silicon; see docs)")
   target_compile_options(arm_dispatch_kernels PUBLIC -mcpu=apple-m4)
 
@@ -51,15 +51,15 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
   include(CheckCCompilerFlag)
   check_c_compiler_flag("-mcpu=gb10" ARM_DISPATCH_HAVE_MCPU_GB10)
   if(ARM_DISPATCH_HAVE_MCPU_GB10)
-    message(STATUS "arm-dispatch-ledger/kernels: Linux aarch64 build -- using -mcpu=gb10 (DGX Spark)")
+    message(STATUS "polygraph/kernels: Linux aarch64 build -- using -mcpu=gb10 (DGX Spark)")
     target_compile_options(arm_dispatch_kernels PUBLIC -mcpu=gb10)
   else()
-    message(STATUS "arm-dispatch-ledger/kernels: Linux aarch64 build -- toolchain does not know "
+    message(STATUS "polygraph/kernels: Linux aarch64 build -- toolchain does not know "
                    "-mcpu=gb10, falling back to -march=armv9.2-a+sve2+i8mm+bf16")
     target_compile_options(arm_dispatch_kernels PUBLIC -march=armv9.2-a+sve2+i8mm+bf16)
   endif()
 else()
-  message(WARNING "arm-dispatch-ledger/kernels: unrecognized target "
+  message(WARNING "polygraph/kernels: unrecognized target "
                    "'${CMAKE_SYSTEM_PROCESSOR}' -- building with no Arm-specific "
                    "flags; SME2/SVE2/i8mm kernels will compile to their "
                    "'unsupported' stubs.")

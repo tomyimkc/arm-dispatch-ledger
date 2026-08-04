@@ -175,6 +175,19 @@ a:hover, a:focus {
   justify-content: space-between;
 }
 
+.brand-mark {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.brand-tagline {
+  font-weight: 500;
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.08em;
