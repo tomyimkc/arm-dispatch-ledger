@@ -14,30 +14,66 @@ mapping, so a judge can check the video against the evidence without watching fr
 and so the video cannot silently drift from the repo if a number is later corrected. It is the
 same discipline `tools/check_claims.py` enforces for the prose.
 
-## Structure — 6 beats x 15 s
+## Who it is for
 
-**The narration is plain English; the on-screen panels carry the technical evidence.** A general
-viewer follows the story from the voice alone; an Arm engineer reads the proof off the panel. That
-split is deliberate — the contest scores "can it quickly capture attention and communicate value"
-alongside technical implementation, and one script cannot serve both if it is written only for
-engineers.
+**General public first, contest judges second.** The one sentence a viewer should be able to
+repeat a week later is: *"He built a tool that checks whether software is telling the truth."*
+
+An earlier cut opened mid-investigation and never said what the project was or why anyone should
+care — it simplified the vocabulary but kept a structure aimed at engineers. This cut fixes the
+structure, not just the words.
+
+## Structure — 13 s cold open + 5 beats x 15 s = 1:28
+
+**0:00–0:13 — the race, no narration.** A real side-by-side: the same AI assistant, same laptop,
+same question, same seed, answering twice. The right pane finishes at **1.72 s**; the left is still
+writing at 2.40 s and lands at **3.42 s**. Both answers are byte-identical, word for word. The
+viewer feels the benefit before a single word is explained.
 
 | # | Said in plain English | Shown on the panel | Source |
 |---|---|---|---|
-| 01 | "Your laptop has a chip built to speed up AI. Your app says it's using it. It wasn't." | `SME2 enabled` / `using the fast kernel` / **the fast kernel: 0 times** | `results/GROUND-TRUTH-DISPATCH.md` |
-| 02 | "Normal benchmarks only measure time — the time looks fine either way." | timing can't see it · 12 cores: **0 fast / 31,871 fallback** · 2 cores: **5,826 fast** | `results/dispatch-ledger-darwin-arm64.json` |
-| 03 | "Two hidden rules. Chatting happens one word at a time, so it never qualifies." | cores capped at 2 · needs 128+ words at once · never qualifies | `kleidiai.cpp` @ `dbadb68` |
-| 04 | "Most of the gain was just using fewer cores — a trick people already knew." | total **3.43x** · fewer cores **3.95x** (already known) · accelerator itself **1.31x** | `results/REMEASURE-2026-08-04-QUIET.md` |
-| 05 | "I changed the code. It picks the right setting automatically." | **67.8 → 145.9 words/s** · matches expert tuning (146.0) · everything else unchanged | `results/AUTODEFAULTS.md` |
-| 06 | "The shortcut most people would reach for cuts other performance nearly in half. Mine doesn't." | shortcut **-47%** · this fix **2.15x, nothing lost** · upstream **#26547** | `results/AUTODEFAULTS.md` |
+| 01 | "That's an AI assistant running entirely on your own laptop. The slow one believes it's using your laptop's AI chip. It never did." | identical answer · before **3.42 s** · after **1.72 s (1.99x)** | `results/video/race-capture.json` |
+| 02 | "I built a tool that checks whether software is telling the truth — not whether it's fast." | benchmarks measure *how long*; this measures *what actually ran*; works on software you didn't write | `tools/verify_dispatch.py` |
+| 03 | "The answer was zero. The fast chip never ran once, while every message said it was working." | reported: enabled · actually ran: **0 times** · instead: **31,871** slow-path calls | `results/dispatch-ledger-darwin-arm64.json` |
+| 04 | "Most of the speed-up came from something people already knew. I published both numbers." | total **3.43x** · already-known trick **3.95x of it** · the chip itself **1.31x** | `results/REMEASURE-2026-08-04-QUIET.md` |
+| 05 | "The fix is sent to the maintainers. It picks the right setting by itself. The tool is free." | now automatic · **2.15x** typing speed · upstream **#26547** | `results/AUTODEFAULTS.md` |
 
-Beat 04 is deliberate. The video says out loud that most of the raw speed-up is a well-known
-effect and **not** this project's discovery, and that the accelerator's own contribution is the
-smaller 1.31x. A submission video is the easiest place in the world to quietly drop that caveat.
+Jargon kept off the soundtrack entirely: `ne11`, `kai_run_matmul`, KleidiAI, SME2, GEMV, dispatch,
+thread cap, tokens/sec. Each has a plain stand-in ("your laptop's AI chip", "chip instructions",
+"hidden rule", "how fast it types").
 
-Jargon deliberately kept off the soundtrack: `ne11`, `kai_run_matmul`, KleidiAI, GEMV, dispatch,
-thread cap. Each has a plain-language stand-in ("large batches", "chip instructions", "the fast
-kernel", "one word at a time", "hidden rule", "how many cores it may use").
+## The cold-open race is measured, not staged
+
+`tools/capture_race.py` streams both binaries' stdout and timestamps **every character as it
+actually arrives**. `results/video/race-capture.json` is that recording; the video's typing speed
+is a replay of it. Nothing is simulated, slowed, or sped up.
+
+Fairness controls:
+
+- Same prompt, same `--seed 7`, same model, same context size → **byte-identical output**, so the
+  only visible difference is speed.
+- Runs alternated A,B,A,B,A,B so machine contention hit both sides equally.
+- Three reps each; the **median** run was kept.
+
+**Disclosure — one outlier.** The patched build's three runs were **4.225 s, 1.721 s, 1.723 s**;
+the baseline's were 3.238 s, 3.424 s, 3.671 s. The patched first run was slower than baseline —
+almost certainly a cold page-cache effect on first execution of a freshly built binary. The median
+(1.723 s) is what the video replays, and reps 2 and 3 agree to within 2 ms. All six raw
+wall-clock times are committed in `race-capture.json` under `all_walls`, not just the ones that
+flatter the result.
+
+**Why the race shows 1.99x and not 2.15x.** `results/AUTODEFAULTS.md` measures *decode* throughput
+in isolation (2.15x). The race is end-to-end wall clock, which also includes model load and prompt
+processing — work this patch does not touch. A short answer would dilute the difference further; an
+earlier 60-token capture showed only 1.23x for exactly that reason. The 260-token answer in the
+video is both the honest figure and the realistic case, because decode dominates once the assistant
+writes more than a sentence.
+
+## Display-time cleanup
+
+`llama.cpp` prints a timing footer and an `Exiting...` line after the answer. That is real output
+and `race-capture.json` keeps it verbatim, but it reads as debug noise to a general viewer, so it
+is trimmed **at display time only** (`ColdOpen.tsx`, `visibleLen`). Character timings are untouched.
 
 ## Pipeline
 
