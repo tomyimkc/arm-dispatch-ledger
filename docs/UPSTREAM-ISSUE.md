@@ -98,12 +98,12 @@ auto-continue), Apple M4 Max, `-t <threads>`, `Qwen2.5-0.5B-Instruct-Q4_0.gguf`:
 | 2 | decode | SME2 kernel runs | 5826 / 0 | SME2 dispatched |
 | 4 | decode | SME2 kernel runs | **0 / 15936** | **silent fallback** |
 | 8 | decode | SME2 kernel runs | **0 / 31871** | **silent fallback** |
-| 16 | decode | SME2 kernel runs | **0 / 51214** | **silent fallback** |
+| 16 | decode | SME2 kernel runs | **0 / 51215** | **silent fallback** |
 | 1 | prefill (long, `ne11>=128`) | SME2 kernel runs | 660 / 0 | SME2 dispatched |
 | 2 | prefill (long) | SME2 kernel runs | 3853 / 0 | SME2 dispatched |
-| 4 | prefill (long) | SME2 kernel runs | 2232 / 6712 | **hybrid** — some SME2, some NEON |
-| 8 | prefill (long) | SME2 kernel runs | 1547 / 13692 | **hybrid** |
-| 16 | prefill (long) | SME2 kernel runs | 1403 / 21509 | **hybrid** |
+| 4 | prefill (long) | SME2 kernel runs | 2232 / 6711 | **hybrid** — some SME2, some NEON |
+| 8 | prefill (long) | SME2 kernel runs | 1538 / 13702 | **hybrid** |
+| 16 | prefill (long) | SME2 kernel runs | 1377 / 21534 | **hybrid** |
 
 Across every one of these rows, `system_info:` still prints `SME = 1 | SME2 = 1 |
 KLEIDIAI = 1`, and the load-time log still prints `kleidiai: primary q4 kernel feature

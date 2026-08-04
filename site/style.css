@@ -247,6 +247,193 @@ main {
   margin-bottom: 1.1rem;
 }
 
+/* ----------------------------- Headline band ----------------------------- */
+/* The hero results band: the one number a judge should see without
+   scrolling. Semantic colours (good/bad/neutral bars) are always paired
+   with an icon + text note in the markup, matching the rest of this page's
+   accessibility rule -- never colour alone. */
+
+.headline-band {
+  margin-top: 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 1.4rem 1.4rem 1.6rem;
+}
+
+.headline-band h2 {
+  margin-top: 0;
+}
+
+.headline-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.headline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.headline-card {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.15rem;
+}
+
+.headline-eyebrow {
+  margin: 0 0 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.headline-value {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.35rem, 1.05rem + 1vw, 1.85rem);
+  font-weight: 800;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.headline-card-decode .headline-value { color: var(--match-fg); }
+.headline-card-prefill .headline-value { color: var(--accent); }
+
+.headline-detail {
+  margin: 0 0 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.headline-note {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.headline-contrast {
+  margin-top: 1.4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.headline-contrast h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.5rem;
+}
+
+.headline-contrast-intro {
+  color: var(--text-muted);
+  max-width: 74ch;
+  margin: 0 0 1rem;
+  font-size: 0.94rem;
+}
+
+.headline-bars {
+  display: grid;
+  gap: 1.1rem;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  align-items: start;
+}
+
+.headline-bar-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.headline-bar-group-title {
+  margin: 0 0 0.1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.headline-bar-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) 1fr;
+  grid-template-areas: "label label" "track value";
+  gap: 0.15rem 0.7rem;
+  align-items: center;
+}
+
+.headline-bar-label {
+  grid-area: label;
+  font-size: 0.84rem;
+  color: var(--text);
+}
+
+.headline-bar-track {
+  grid-area: track;
+  display: block;
+  height: 0.65rem;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.headline-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.headline-bar-neutral .headline-bar-fill { background: var(--text-muted); }
+.headline-bar-good .headline-bar-fill { background: var(--match-fg); }
+.headline-bar-bad .headline-bar-fill { background: var(--mismatch-fg); }
+
+.headline-bar-value {
+  grid-area: value;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.headline-bar-good .headline-bar-value { color: var(--match-fg); font-weight: 600; }
+.headline-bar-bad .headline-bar-value { color: var(--mismatch-fg); font-weight: 600; }
+
+.headline-bar-icon {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+}
+
+.headline-honesty {
+  margin-top: 1.2rem;
+  background: var(--hybrid-bg);
+  border: 1px solid var(--hybrid-border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.headline-honesty p {
+  margin: 0;
+  color: var(--hybrid-fg);
+  font-size: 0.9rem;
+  max-width: 78ch;
+}
+
+.headline-honesty-icon {
+  display: inline-block;
+}
+
+@media (max-width: 34rem) {
+  .headline-bar-row {
+    grid-template-columns: 1fr;
+    grid-template-areas: "label" "track" "value";
+  }
+}
+
 /* ---------------------------- Summary strip ---------------------------- */
 
 .summary-strip {

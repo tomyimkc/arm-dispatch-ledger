@@ -50,7 +50,7 @@ claiming `SME2 enabled` on every single one of those runs.
 ```
 threads=1   decode: SME2 fires (996 lldb hits)         <- advertised AND executed
 threads=8   decode: SME2 fires ZERO times (31,871 NEON hits instead)   <- advertised, NOT executed
-threads=16  decode: SME2 fires ZERO times (51,214 NEON hits instead)   <- advertised, NOT executed
+threads=16  decode: SME2 fires ZERO times (51,215 NEON hits instead)   <- advertised, NOT executed
 ```
 
 All numbers in this document were produced by code in this repo, run for real on real Arm
@@ -68,7 +68,7 @@ see "the correction, up front" in Finding 1 below).
 | | |
 |---|---|
 | **Advertised** (compile-time banner + selection-time log) | `SME = 1 \| SME2 = 1 \| KLEIDIAI = 1` and `kleidiai: primary q4 kernel feature SME2` — printed identically on **every** run below, including the ones where SME2 never executes once. |
-| **Executed** (dispatch-time, `lldb` breakpoint on `kai_run_matmul.*sme`, 18 symbol locations) | Decode at `-t 4/8/16`: **0 hits**, 15,936–51,214 NEON-dotprod hits instead. Decode at `-t 1/2`: SME2 fires (996–5,826 hits). |
+| **Executed** (dispatch-time, `lldb` breakpoint on `kai_run_matmul.*sme`, 18 symbol locations) | Decode at `-t 4/8/16`: **0 hits**, 15,936–51,215 NEON-dotprod hits instead. Decode at `-t 1/2`: SME2 fires (996–5,826 hits). |
 | **Net effect** | `llama.cpp` defaults `n_threads` to the physical core count. On this 16-core M4 Max, **that default silently never uses SME2 for token generation** — the common case for a chat session — while every log line a user would look at says otherwise. |
 
 ---
@@ -209,12 +209,12 @@ Full methodology, thermal controls, and anti-"you faked it" measures: `tools/pro
 | 2 | decode_short | SME2 | sme2 | 5,826 / 0 | **SME2_DISPATCHED** |
 | 4 | decode_short | SME2 | dotprod | 0 / 15,936 | **SILENT_FALLBACK** |
 | 8 | decode_short | SME2 | dotprod | 0 / 31,871 | **SILENT_FALLBACK** |
-| 16 | decode_short | SME2 | dotprod | 0 / 51,214 | **SILENT_FALLBACK** |
+| 16 | decode_short | SME2 | dotprod | 0 / 51,215 | **SILENT_FALLBACK** |
 | 1 | prefill_long | SME2 | sme2 | 660 / 0 | **SME2_DISPATCHED** |
 | 2 | prefill_long | SME2 | sme2 | 3,853 / 0 | **SME2_DISPATCHED** |
-| 4 | prefill_long | SME2 | dotprod+sme2 | 2,232 / 6,712 | **SME2_HYBRID_DISPATCH** |
+| 4 | prefill_long | SME2 | dotprod+sme2 | 2,232 / 6,711 | **SME2_HYBRID_DISPATCH** |
 | 8 | prefill_long | SME2 | dotprod+sme2 | 1,538 / 13,702 | **SME2_HYBRID_DISPATCH** |
-| 16 | prefill_long | SME2 | dotprod+sme2 | 1,403 / 21,509 | **SME2_HYBRID_DISPATCH** |
+| 16 | prefill_long | SME2 | dotprod+sme2 | 1,377 / 21,534 | **SME2_HYBRID_DISPATCH** |
 
 `--assert` exits `1` on exactly the 3 true `SILENT_FALLBACK` rows and does not flag the 3
 `HYBRID_DISPATCH` rows (real, if partial, SME2 usage). Full per-config JSON with the L1/L2/L3
@@ -238,7 +238,7 @@ evidence used to derive every row above: `results/dispatch-ledger-darwin-arm64.j
 | 1 | 896.2 ± 4.7 | 415.1 ± 6.0 tok/s | 2.16x |
 | 2 | 1629.1 ± 8.6 | 805.2 ± 13.1 tok/s | 2.02x |
 | 8 | 1830.1 ± 203.5 | **2676.4 ± 30.6 tok/s** | 0.68x — **NEON alone is the fastest cell in the whole sweep** |
-| 16 | 445.3 ± 100.5 | 1514.1 ± 198.9 tok/s (unstable) | NEON still ahead, both degraded |
+| 16 | 445.3 ± 100.5 | 1514.1 ± 198.8 tok/s (unstable) | NEON still ahead, both degraded |
 
 Prefill, short prompt and full Q8_0 `[not available]` rows: `results/bench/bench-apple-m4-max.md`.
 Raw JSON + figures: `results/bench/bench-apple-m4-max.json`, `results/bench/figures/*.png`.

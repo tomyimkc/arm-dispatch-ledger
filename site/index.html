@@ -47,12 +47,61 @@
   <noscript>
     <div class="noscript-banner">
       This dashboard renders committed JSON with JavaScript. With JavaScript disabled, read the
-      raw evidence directly: <a href="data/results/dispatch-ledger-darwin-arm64.json">dispatch-ledger-darwin-arm64.json</a>,
+      raw evidence directly: <a href="data/results/headline.json">headline.json</a>,
+      <a href="data/results/dispatch-ledger-darwin-arm64.json">dispatch-ledger-darwin-arm64.json</a>,
       <a href="data/results/SUMMARY.md">SUMMARY.md</a>, <a href="data/results/GROUND-TRUTH-DISPATCH.md">GROUND-TRUTH-DISPATCH.md</a>.
     </div>
   </noscript>
 
   <main id="main">
+    <section class="panel headline-band" id="headline-band" aria-labelledby="headline-heading">
+      <h2 id="headline-heading">The measured optimization</h2>
+      <p class="panel-intro">
+        <code>patches/0002-kleidiai-sme-aware-thread-default.patch</code> &mdash; one measured,
+        round-robin-interleaved session (<code>llama-cli</code>, n=9 per config), decode and
+        prefill reported separately. Every number below is read live from
+        <a href="data/results/headline.json">results/headline.json</a>; nothing here is typed
+        into this page by hand.
+      </p>
+
+      <p class="headline-empty" id="headline-empty" hidden>
+        No <code>results/headline.json</code> was found under <code>results/</code> at publish
+        time &mdash; this band has nothing honest to show yet.
+      </p>
+
+      <div class="headline-grid" id="headline-grid">
+        <div class="headline-card headline-card-decode">
+          <p class="headline-eyebrow">Decode &mdash; zero flags</p>
+          <p class="headline-value" id="headline-decode-ratio">&ndash;</p>
+          <p class="headline-detail" id="headline-decode-detail">Loading&hellip;</p>
+          <p class="headline-note" id="headline-decode-note"></p>
+        </div>
+        <div class="headline-card headline-card-prefill">
+          <p class="headline-eyebrow">Prefill &mdash; same patch, same run</p>
+          <p class="headline-value" id="headline-prefill-ratio">&ndash;</p>
+          <p class="headline-detail" id="headline-prefill-detail">Loading&hellip;</p>
+          <p class="headline-note" id="headline-prefill-note"></p>
+        </div>
+      </div>
+
+      <div class="headline-contrast">
+        <h3 id="headline-contrast-heading">
+          Why a phase-aware patch, and not just &ldquo;pass <code>-t 2</code>&rdquo;
+        </h3>
+        <p class="headline-contrast-intro" id="headline-contrast-intro">Loading&hellip;</p>
+        <div class="headline-bars" id="headline-bars" aria-labelledby="headline-contrast-heading"></div>
+      </div>
+
+      <div class="headline-honesty" id="headline-honesty">
+        <p>
+          <span class="headline-honesty-icon" aria-hidden="true">&#9432;</span>
+          <strong>Honesty check &mdash; how much of this is SME2, and how much is generic thread
+          tuning:</strong>
+          <span id="headline-honesty-text">Loading decomposition data&hellip;</span>
+        </p>
+      </div>
+    </section>
+
     <section class="summary-strip" aria-labelledby="summary-heading">
       <h2 id="summary-heading" class="visually-hidden">Summary</h2>
       <div class="stat-grid" id="stat-grid">
@@ -165,7 +214,10 @@
       upstream issue <a href="https://github.com/ggml-org/llama.cpp/issues/26547">ggml-org/llama.cpp#26547</a>
     </p>
     <p>
-      Raw evidence: <a href="data/results/SUMMARY.md">SUMMARY.md</a>,
+      Raw evidence: <a href="data/results/headline.json">headline.json</a>,
+      <a href="data/results/AUTODEFAULTS.md">AUTODEFAULTS.md</a>,
+      <a href="data/results/REMEASURE-2026-08-04-QUIET.md">REMEASURE-2026-08-04-QUIET.md</a>,
+      <a href="data/results/SUMMARY.md">SUMMARY.md</a>,
       <a href="data/results/GROUND-TRUTH-DISPATCH.md">GROUND-TRUTH-DISPATCH.md</a>,
       <a href="data/results/LEDGER.md">LEDGER.md</a>
     </p>

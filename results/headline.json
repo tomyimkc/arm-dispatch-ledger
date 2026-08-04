@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-08-04T07:09:35.288126+00:00",
+  "note": "Dashboard headline data for site/app.js's hero results band. Only raw measured tok/s values are stored here -- every ratio shown on the dashboard is computed from these numbers at render time (see site/app.js renderHeadline()), so the page cannot drift from the source docs below without this file being re-derived from them.",
+  "source_docs": [
+    "results/AUTODEFAULTS.md",
+    "results/REMEASURE-2026-08-04-QUIET.md",
+    "README.md (section: \"Decomposition — how much of the decode win is SME2, and how much is thread tuning\")"
+  ],
+  "host": "Apple M4 Max, macOS",
+  "model": "Qwen2.5-0.5B-Instruct-Q4_0 (/tmp/ggufs/q05.gguf)",
+  "patch": "patches/0002-kleidiai-sme-aware-thread-default.patch",
+  "kill_switch_env": "GGML_KLEIDIAI_AUTO_THREADS=0",
+  "autodefaults": {
+    "source": "results/AUTODEFAULTS.md §5 -- round-robin interleaved (1,2,3,4,1,2,3,4,...), n=9 per config, llama-cli, decode and prefill measured separately from a single invocation per rep",
+    "unit": "tok/s",
+    "decode": {
+      "baseline_no_flags": 67.8,
+      "autodefault_no_flags": 145.9,
+      "hand_tuned_t2": 146.0,
+      "kill_switch_no_flags": 68.3
+    },
+    "prefill": {
+      "baseline_no_flags": 1835.2,
+      "autodefault_no_flags": 1779.8,
+      "naive_t2_workaround": 975.6,
+      "kill_switch_no_flags": 1835.3
+    }
+  },
+  "tuning_study": {
+    "source": "results/REMEASURE-2026-08-04-QUIET.md §Results -- round-robin interleaved, n=7 per config, llama-bench, quiet machine (superseding the earlier contended measurement)",
+    "unit": "tok/s",
+    "decode": { "default_no_flags": 93.6, "tuned_t2": 321.0 },
+    "prefill": { "default_no_flags": 1230.3, "tuned_t8": 2198.1 }
+  },
+  "decomposition": {
+    "source": "README.md, §'Decomposition — how much of the decode win is SME2, and how much is thread tuning' -- a second sweep toggling thread count AND GGML_KLEIDIAI_SME together, interleaved n=5, same session. Absolute tok/s here were collected under different shared-machine load than the quiet tuning_study sweep above and must never be compared to it directly -- only the ratios within this one interleaved session are load-bearing (this project's own interleaving-discipline caveat).",
+    "unit": "tok/s",
+    "default_threads_sme_on": 48.0,
+    "default_threads_sme_off": 59.6,
+    "t2_sme_on": 309.2,
+    "t2_sme_off": 235.7
+  }
+}

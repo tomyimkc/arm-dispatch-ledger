@@ -153,7 +153,7 @@ def run(cmd: List[str], env: Optional[Dict[str, str]] = None, timeout: Optional[
         return subprocess.CompletedProcess(cmd, returncode=124, stdout=out, stderr=err + "\n[crossover.py] TIMEOUT")
 
 
-def build_subprocess_env(mode: str) -> Dict[str, str]:
+def build_subprocess_env(mode: str, extra_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Full subprocess environment for a given SME mode.
 
     "on"  -> GGML_KLEIDIAI_SME left UNSET (explicitly removed from the
@@ -163,6 +163,11 @@ def build_subprocess_env(mode: str) -> Dict[str, str]:
     "off" -> GGML_KLEIDIAI_SME=0, forces SME off entirely regardless of
              detection (confirmed by reading kleidiai.cpp's env parsing and
              empirically, see results/GROUND-TRUTH-DISPATCH.md).
+
+    `extra_env`, if given, is applied last (so it can add/override e.g.
+    GGML_KLEIDIAI_AUTO_THREADS for the autodefault-vs-baseline comparison in
+    run_autodefault_compare() -- default None preserves this function's
+    original two-argument behavior for every existing caller).
     """
     base = os.environ.copy()
     base.pop("GGML_KLEIDIAI_SME", None)
@@ -172,6 +177,8 @@ def build_subprocess_env(mode: str) -> Dict[str, str]:
         pass
     else:
         raise ValueError(f"unknown sme mode {mode!r}")
+    if extra_env:
+        base.update(extra_env)
     return base
 
 
@@ -297,6 +304,52 @@ def tokenize_prompt_file(llama_tokenize: Optional[Path], model: Path, prompt_fil
     return len(lines) if lines else None
 
 
+def run_llama_cli_config_once(
+    llama_cli: Path,
+    model: Path,
+    prompt_file: Path,
+    n_gen: int,
+    sme_mode: str,
+    threads: Optional[int] = None,
+    threads_batch: Optional[int] = None,
+    extra_env: Optional[Dict[str, str]] = None,
+    timeout: float = 90.0,
+) -> Dict[str, float]:
+    """General llama-cli invocation: parse the
+    `[ Prompt: X t/s | Generation: Y t/s ]` summary line it prints on
+    completion. Requires -no-cnv -st --simple-io so it processes the prompt
+    file once and exits instead of hanging on non-TTY stdin (see the work
+    package brief).
+
+    `threads` -> `-t` (generation threads), `threads_batch` -> `-tb`
+    (prompt/batch threads). Either or both may be `None` to omit that flag
+    entirely and let llama.cpp's own default-resolution path run instead --
+    this is what exercises patches/0002 (which only changes what happens
+    when `-t` is *not* passed) and what reproduces the "hand-tuned `-t 2`,
+    no `-tb`" config from results/AUTODEFAULTS.md, where `-tb` is left to
+    inherit llama.cpp's own "same as -t" default rather than being pinned
+    independently.
+
+    `extra_env` is passed through to build_subprocess_env() (e.g.
+    `{"GGML_KLEIDIAI_AUTO_THREADS": "0"}` for the patch's kill switch)."""
+    cmd = [str(llama_cli), "-m", str(model), "-no-cnv", "-st", "--simple-io", "-n", str(n_gen), "-f", str(prompt_file)]
+    if threads is not None:
+        cmd += ["-t", str(threads)]
+    if threads_batch is not None:
+        cmd += ["-tb", str(threads_batch)]
+    env = build_subprocess_env(sme_mode, extra_env=extra_env)
+    cp = run(cmd, env=env, timeout=timeout)
+    combined = cp.stdout + "\n" + cp.stderr
+    m = BRACKET_RE.search(combined)
+    if not m:
+        raise CrossoverError(
+            f"llama-cli run produced no '[ Prompt: .. | Generation: .. ]' summary "
+            f"(returncode={cp.returncode}, threads={threads}, threads_batch={threads_batch}, sme={sme_mode}, "
+            f"extra_env={extra_env})\ntail of output: {combined[-1500:]}"
+        )
+    return {"prompt_ts": float(m.group(1)), "gen_ts": float(m.group(2))}
+
+
 def run_llama_cli_split_once(
     llama_cli: Path,
     model: Path,
@@ -308,25 +361,13 @@ def run_llama_cli_split_once(
     timeout: float = 90.0,
 ) -> Dict[str, float]:
     """Invoke llama-cli once with -t <threads> -tb <threads_batch>, parse the
-    `[ Prompt: X t/s | Generation: Y t/s ]` summary line it prints on
-    completion. Requires -no-cnv -st --simple-io so it processes the prompt
-    file once and exits instead of hanging on non-TTY stdin (see the work
-    package brief)."""
-    cmd = [
-        str(llama_cli), "-m", str(model), "-no-cnv", "-st", "--simple-io",
-        "-t", str(threads), "-tb", str(threads_batch), "-n", str(n_gen), "-f", str(prompt_file),
-    ]
-    env = build_subprocess_env(sme_mode)
-    cp = run(cmd, env=env, timeout=timeout)
-    combined = cp.stdout + "\n" + cp.stderr
-    m = BRACKET_RE.search(combined)
-    if not m:
-        raise CrossoverError(
-            f"llama-cli split-phase run produced no '[ Prompt: .. | Generation: .. ]' summary "
-            f"(returncode={cp.returncode}, threads={threads}, threads_batch={threads_batch}, sme={sme_mode})\n"
-            f"tail of output: {combined[-1500:]}"
-        )
-    return {"prompt_ts": float(m.group(1)), "gen_ts": float(m.group(2))}
+    `[ Prompt: X t/s | Generation: Y t/s ]` summary line. Thin wrapper around
+    run_llama_cli_config_once() kept as its own function (same name/signature
+    as before) so existing callers/behavior are unchanged."""
+    return run_llama_cli_config_once(
+        llama_cli, model, prompt_file, n_gen, sme_mode,
+        threads=threads, threads_batch=threads_batch, timeout=timeout,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -461,6 +502,208 @@ def run_main_sweep(
                 print(f"[crossover.py] WARNING: measurement failed for {phase_name} t={threads} sme={sme_mode}: {e}", file=sys.stderr)
                 errors.append({"phase": phase_name, "threads": threads, "sme_mode": sme_mode, "round": round_i, "error": str(e)})
     return samples, errors
+
+
+# --------------------------------------------------------------------------
+# Autodefault A/B/C/D comparison -- generalizes results/AUTODEFAULTS.md's
+# hand-run protocol (originally only exercised against the 0.5B/Q4_0 model)
+# to any --model / any pair of (baseline, autodefault-patched) llama-cli
+# builds, via --autodefault-compare. Added for the "bigger-model" work
+# package (see results/GENERALIZATION.md); does not change any existing
+# CLI flag or the default (no --autodefault-compare) code path above.
+#
+# Same 4 configs as results/AUTODEFAULTS.md section 5, in the same
+# round-robin order (never all reps of one config back-to-back), each
+# config's prefill (t/s) and decode (t/s) both coming from ONE llama-cli
+# invocation's `[ Prompt: X t/s | Generation: Y t/s ]` summary line, exactly
+# as that file's methodology did:
+#   1. baseline,    no flags                                  (today's real-world default)
+#   2. autodefault, no flags                                   (the patch, doing its job)
+#   3. baseline,    -t <sme_thread_cap>  (no -tb -- "the naive hand-tuned workaround")
+#   4. autodefault, no flags, GGML_KLEIDIAI_AUTO_THREADS=0     (kill switch -> must match config 1)
+# --------------------------------------------------------------------------
+
+AUTODEFAULT_COMPARE_CONFIGS: List[Dict[str, Any]] = [
+    {"id": 1, "label": "baseline, no flags", "binary": "baseline", "threads": None, "threads_batch": None, "extra_env": None},
+    {"id": 2, "label": "autodefault, no flags", "binary": "autodefault", "threads": None, "threads_batch": None, "extra_env": None},
+    {"id": 3, "label": "baseline, -t <cap> (hand-tuned, no -tb)", "binary": "baseline", "threads": "cap", "threads_batch": None, "extra_env": None},
+    {"id": 4, "label": "autodefault, AUTO_THREADS=0, no flags", "binary": "autodefault", "threads": None, "threads_batch": None,
+     "extra_env": {"GGML_KLEIDIAI_AUTO_THREADS": "0"}},
+]
+
+
+def run_autodefault_compare_sweep(
+    binaries: Dict[str, Path],
+    model: Path,
+    prompt_file: Path,
+    sme_thread_cap: int,
+    n_gen: int,
+    reps: int,
+    per_call_timeout: float,
+    retries: int,
+    quiet: bool,
+    retry_log: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[Dict[int, Dict[str, List[float]]], List[Dict[str, Any]]]:
+    """Round-robin interleaved (1,2,3,4, 1,2,3,4, ...) measurement of the 4
+    AUTODEFAULT_COMPARE_CONFIGS. Returns (samples_by_config_id, errors) where
+    samples_by_config_id[cfg_id] == {"prompt_ts": [...], "gen_ts": [...]}."""
+    samples: Dict[int, Dict[str, List[float]]] = {c["id"]: {"prompt_ts": [], "gen_ts": []} for c in AUTODEFAULT_COMPARE_CONFIGS}
+    errors: List[Dict[str, Any]] = []
+    total_calls = len(AUTODEFAULT_COMPARE_CONFIGS) * reps
+    call_i = 0
+    for round_i in range(reps):
+        for cfg in AUTODEFAULT_COMPARE_CONFIGS:
+            call_i += 1
+            llama_cli = binaries[cfg["binary"]]
+            threads = sme_thread_cap if cfg["threads"] == "cap" else cfg["threads"]
+            if not quiet:
+                print(
+                    f"[crossover.py] autodefault-compare round {round_i + 1}/{reps} call {call_i}/{total_calls}: "
+                    f"config {cfg['id']} ({cfg['label']})",
+                    file=sys.stderr,
+                )
+            try:
+                def _on_retry(attempt, e, _cfg=cfg):
+                    print(f"[crossover.py]   retry {attempt + 1} after timeout for autodefault-compare config {_cfg['id']}", file=sys.stderr)
+                    if retry_log is not None:
+                        retry_log.append({"context": "autodefault_compare", "config_id": _cfg["id"], "attempt": attempt + 1})
+                r = call_with_retries(
+                    run_llama_cli_config_once, llama_cli, model, prompt_file, n_gen, "on",
+                    threads=threads, threads_batch=cfg["threads_batch"], extra_env=cfg["extra_env"],
+                    timeout=per_call_timeout, retries=retries, on_retry=_on_retry,
+                )
+                samples[cfg["id"]]["prompt_ts"].append(r["prompt_ts"])
+                samples[cfg["id"]]["gen_ts"].append(r["gen_ts"])
+            except CrossoverError as e:
+                print(f"[crossover.py] WARNING: autodefault-compare config {cfg['id']} failed (round={round_i}): {e}", file=sys.stderr)
+                errors.append({"config_id": cfg["id"], "round": round_i, "error": str(e)})
+    return samples, errors
+
+
+def main_autodefault_compare(args: argparse.Namespace) -> int:
+    """Entry point for `--autodefault-compare`. Writes ONLY a JSON evidence
+    file (no auto-generated markdown -- results/AUTODEFAULTS.md's own table
+    format is hand-assembled from raw numbers like these, and
+    results/GENERALIZATION.md does the same for the models this mode was
+    added to cover)."""
+    try:
+        baseline_cli = find_binary(args.baseline_bin_dir, "llama-cli")
+    except CrossoverError as e:
+        print(f"[crossover.py] FATAL: {e}", file=sys.stderr)
+        return 2
+    if args.autodefault_bin_dir is None:
+        print("[crossover.py] FATAL: --autodefault-compare requires --autodefault-bin-dir", file=sys.stderr)
+        return 2
+    try:
+        autodefault_cli = find_binary(args.autodefault_bin_dir, "llama-cli")
+    except CrossoverError as e:
+        print(f"[crossover.py] FATAL: {e}", file=sys.stderr)
+        return 2
+    # llama-tokenize is only needed for a best-effort real-token-count sanity
+    # check (tokenization is identical between the two binaries -- same base
+    # commit/tokenizer -- so either build's copy is equally valid); some
+    # build layouts only produce it in one of the two dirs (e.g. a
+    # patched-binary build that only targeted llama-cli), so try both before
+    # giving up.
+    llama_tokenize: Optional[Path] = None
+    for bin_dir in (args.autodefault_bin_dir, args.baseline_bin_dir):
+        try:
+            llama_tokenize = find_binary(bin_dir, "llama-tokenize")
+            break
+        except CrossoverError:
+            continue
+
+    if not args.model.is_file():
+        print(f"[crossover.py] FATAL: model not found at {args.model}", file=sys.stderr)
+        return 2
+
+    plat = args.platform or platform_slug()
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    started_at = datetime.datetime.now(datetime.timezone.utc)
+    t0 = time.monotonic()
+    thermal_before = thermal_snapshot()
+    load_before = load_average_snapshot()
+    print(f"[crossover.py] autodefault-compare: model={args.model} baseline={baseline_cli} autodefault={autodefault_cli} "
+          f"sme_thread_cap={args.sme_thread_cap} reps={args.reps}", file=sys.stderr)
+
+    prompt_file = args.out_dir / f"_autodefault-compare-prompt-{plat}.txt"
+    build_split_phase_prompt_file(prompt_file, words=args.compare_prompt_words)
+    real_token_count = tokenize_prompt_file(llama_tokenize, args.model, prompt_file)
+    print(f"[crossover.py] autodefault-compare prompt file: {prompt_file} ({args.compare_prompt_words} words, "
+          f"real tokenized length = {real_token_count if real_token_count is not None else '[not independently verified]'})",
+          file=sys.stderr)
+
+    retry_log: List[Dict[str, Any]] = []
+    binaries = {"baseline": baseline_cli, "autodefault": autodefault_cli}
+    # One untimed warmup call per config first (discarded), same rationale as
+    # the main split-phase measurement: first-call page-in/mmap cost should
+    # not land inside the timed samples.
+    for cfg in AUTODEFAULT_COMPARE_CONFIGS:
+        threads = args.sme_thread_cap if cfg["threads"] == "cap" else cfg["threads"]
+        try:
+            call_with_retries(
+                run_llama_cli_config_once, binaries[cfg["binary"]], args.model, prompt_file, args.compare_n_gen, "on",
+                threads=threads, threads_batch=cfg["threads_batch"], extra_env=cfg["extra_env"],
+                timeout=args.per_call_timeout, retries=args.retries,
+            )
+        except CrossoverError as e:
+            print(f"[crossover.py] WARNING: autodefault-compare warmup failed for config {cfg['id']}: {e}", file=sys.stderr)
+
+    samples, errors = run_autodefault_compare_sweep(
+        binaries, args.model, prompt_file, args.sme_thread_cap, args.compare_n_gen, args.reps,
+        args.per_call_timeout, args.retries, args.quiet, retry_log=retry_log,
+    )
+
+    rows = []
+    for cfg in AUTODEFAULT_COMPARE_CONFIGS:
+        prompt_agg = aggregate(samples[cfg["id"]]["prompt_ts"])
+        gen_agg = aggregate(samples[cfg["id"]]["gen_ts"])
+        rows.append({**cfg, "prompt_agg": prompt_agg, "gen_agg": gen_agg})
+
+    try:
+        prompt_file.unlink()
+    except OSError:
+        pass
+
+    thermal_after = thermal_snapshot()
+    load_after = load_average_snapshot()
+    finished_at = datetime.datetime.now(datetime.timezone.utc)
+    elapsed_s = time.monotonic() - t0
+
+    out = {
+        "meta": {
+            "mode": "autodefault_compare",
+            "platform": plat,
+            "cpu_brand": cpu_brand(),
+            "generated_at": finished_at.isoformat(),
+            "started_at": started_at.isoformat(),
+            "elapsed_s": round(elapsed_s, 1),
+            "baseline_bin_dir": str(args.baseline_bin_dir),
+            "autodefault_bin_dir": str(args.autodefault_bin_dir),
+            "model": str(args.model),
+            "sme_thread_cap": args.sme_thread_cap,
+            "compare_n_gen": args.compare_n_gen,
+            "compare_prompt_words": args.compare_prompt_words,
+            "compare_prompt_real_token_count": real_token_count,
+            "reps": args.reps,
+            "thermal": {"before": thermal_before, "after": thermal_after},
+            "load_average": {"before": load_before, "after": load_after},
+            "n_retries_used": len(retry_log),
+        },
+        "configs": AUTODEFAULT_COMPARE_CONFIGS,
+        "rows": rows,
+        "errors": errors,
+        "retry_log": retry_log,
+    }
+
+    json_path = args.out_dir / f"autodefault-compare-{plat}.json"
+    json_path.write_text(json.dumps(out, indent=2, sort_keys=False))
+    print(f"[crossover.py] wrote {json_path}", file=sys.stderr)
+    print(f"[crossover.py] total elapsed: {elapsed_s:.1f}s", file=sys.stderr)
+    if errors:
+        print(f"[crossover.py] WARNING: {len(errors)} autodefault-compare measurement(s) failed; see 'errors' in the JSON output.", file=sys.stderr)
+    return 0
 
 
 # --------------------------------------------------------------------------
@@ -654,7 +897,32 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     ap.add_argument("--skip-split-phase", action="store_true", help="skip the llama-cli -t/-tb split-phase measurement")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--autodefault-compare", action="store_true",
+                    help="run the results/AUTODEFAULTS.md 4-config round-robin protocol (baseline vs. "
+                         "autodefault-patched llama-cli, no-flags vs. hand-tuned vs. kill-switch) against "
+                         "--model instead of the main threads x SME x phase sweep. Added for the "
+                         "bigger-model generalization work package; see results/GENERALIZATION.md.")
+    ap.add_argument("--baseline-bin-dir", type=Path, default=DEFAULT_LLAMA_BIN_DIR,
+                    help="[--autodefault-compare only] unpatched llama.cpp build dir")
+    ap.add_argument("--autodefault-bin-dir", type=Path, default=None,
+                    help="[--autodefault-compare only] llama.cpp build dir with "
+                         "patches/0002-kleidiai-sme-aware-thread-default.patch applied (required)")
+    ap.add_argument("--sme-thread-cap", type=int, default=2,
+                    help="[--autodefault-compare only] this host's KleidiAI SME thread cap, i.e. the "
+                         "value patches/0002 auto-selects and config 3's -t is hand-tuned to (default 2, "
+                         "the measured cap on the Apple M4 Max results/AUTODEFAULTS.md was collected on -- "
+                         "override for other hardware, see results/GROUND-TRUTH-DISPATCH.md)")
+    ap.add_argument("--compare-n-gen", type=int, default=128,
+                    help="[--autodefault-compare only] generation token budget per call (default 128, "
+                         "matching results/AUTODEFAULTS.md's methodology)")
+    ap.add_argument("--compare-prompt-words", type=int, default=520,
+                    help="[--autodefault-compare only] synthetic prompt word count for the shared prefill "
+                         "prompt file (default 520; real tokenized length is independently re-verified at "
+                         "runtime via llama-tokenize when available, never assumed)")
     args = ap.parse_args(argv)
+
+    if args.autodefault_compare:
+        return main_autodefault_compare(args)
 
     try:
         llama_bench = find_binary(args.llama_bin_dir, "llama-bench")

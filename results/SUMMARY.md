@@ -69,12 +69,12 @@ configs dispatch SME2 vs. fall back, with hit counts stable within a few percent
 | 2 | decode_short | SME2 | sme2 | 5826/0 | **SME2_DISPATCHED** |
 | 4 | decode_short | SME2 | dotprod | 0/15936 | **SILENT_FALLBACK** |
 | 8 | decode_short | SME2 | dotprod | 0/31871 | **SILENT_FALLBACK** |
-| 16 | decode_short | SME2 | dotprod | 0/51214 | **SILENT_FALLBACK** |
+| 16 | decode_short | SME2 | dotprod | 0/51215 | **SILENT_FALLBACK** |
 | 1 | prefill_long | SME2 | sme2 | 660/0 | **SME2_DISPATCHED** |
 | 2 | prefill_long | SME2 | sme2 | 3853/0 | **SME2_DISPATCHED** |
-| 4 | prefill_long | SME2 | dotprod | 2232/6712 | **SME2_HYBRID_DISPATCH** |
-| 8 | prefill_long | SME2 | dotprod | 1547/13692 | **SME2_HYBRID_DISPATCH** |
-| 16 | prefill_long | SME2 | dotprod | 1403/21509 | **SME2_HYBRID_DISPATCH** |
+| 4 | prefill_long | SME2 | dotprod | 2232/6711 | **SME2_HYBRID_DISPATCH** |
+| 8 | prefill_long | SME2 | dotprod | 1538/13702 | **SME2_HYBRID_DISPATCH** |
+| 16 | prefill_long | SME2 | dotprod | 1377/21534 | **SME2_HYBRID_DISPATCH** |
 
 `--assert` correctly exits 1 on the 3 `decode_short` `SILENT_FALLBACK` rows and
 does **not** flag the 3 `prefill_long` `SME2_HYBRID_DISPATCH` rows. This
@@ -145,7 +145,7 @@ Real measured tok/s, Q4_0 (Q8_0 not available — no such GGUF in this environme
 | 1 | 896.2 +/- 4.7 | 415.1 +/- 6.0 | 2.16x |
 | 2 | 1629.1 +/- 8.6 | 805.2 +/- 13.1 | 2.02x |
 | 8 | 1830.1 +/- 203.5 | **2676.4 +/- 30.6** | 0.68x — NEON alone beats SME's own best cell by 1.46x |
-| 16 | 445.3 +/- 100.5 | 1514.1 +/- 198.9 (unstable) | NEON still clearly ahead, both degraded |
+| 16 | 445.3 +/- 100.5 | 1514.1 +/- 198.8 (unstable) | NEON still clearly ahead, both degraded |
 
 *(Note: the stddev value `198.9` in this row is this section's own `tools/bench.py`
 measurement — unpatched binary, `prefill_long`, 16 threads, SME off — and is unrelated to

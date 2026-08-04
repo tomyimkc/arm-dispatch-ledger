@@ -101,6 +101,15 @@
     });
   }
 
+  // Formats a ratio (e.g. 2.1519...) as "2.15x". Every ratio the headline
+  // band shows is computed here from raw tok/s values in headline.json --
+  // never stored pre-computed, so the page cannot drift from that file.
+  function fmtRatio(n, digits) {
+    if (n === null || n === undefined || Number.isNaN(n) || !isFinite(n)) return "–";
+    var d = digits === undefined ? 2 : digits;
+    return Number(n).toFixed(d) + "x";
+  }
+
   function fetchJSON(path) {
     return fetch(path, { cache: "no-store" })
       .then(function (r) {
@@ -168,6 +177,178 @@
     if (!line) return null;
     var m = /\/\s*(\d+)\s*\|/.exec(line);
     return m ? parseInt(m[1], 10) : null;
+  }
+
+  // ----------------------------------------------------------------------
+  // Headline band -- results/headline.json -> the hero results band above
+  // the dispatch table. Only raw tok/s numbers live in that file; every
+  // ratio/percentage below is computed here, so a future re-measurement
+  // only has to update headline.json's raw numbers and every displayed
+  // ratio recomputes itself.
+  // ----------------------------------------------------------------------
+  function loadHeadline() {
+    return fetchJSON("data/results/headline.json");
+  }
+
+  // One labelled group of horizontal bars, scaled to the group's own max
+  // value (decode and prefill are different orders of magnitude, so each
+  // group gets its own scale). Every bar pairs its colour with an icon AND
+  // a text note -- never colour alone -- per this project's accessibility
+  // rule.
+  function buildHeadlineBarGroup(title, items) {
+    var max = 0;
+    items.forEach(function (it) {
+      if (typeof it.value === "number" && it.value > max) max = it.value;
+    });
+    if (max <= 0) max = 1;
+
+    var group = el("div", { class: "headline-bar-group" }, [
+      el("p", { class: "headline-bar-group-title", text: title }),
+    ]);
+
+    items.forEach(function (it) {
+      var pct = Math.max(2, (it.value / max) * 100);
+      var row = el("div", { class: "headline-bar-row headline-bar-" + it.cls }, [
+        el("span", { class: "headline-bar-label", text: it.label }),
+        el("span", { class: "headline-bar-track" }, [
+          el("span", { class: "headline-bar-fill", style: "width:" + pct.toFixed(1) + "%" }),
+        ]),
+        el("span", { class: "headline-bar-value" }, [
+          el("span", { class: "headline-bar-icon", "aria-hidden": "true", text: it.icon }),
+          el("span", { text: " " + fmt(it.value, 1) + " tok/s" + (it.note ? " — " + it.note : "") }),
+        ]),
+      ]);
+      group.appendChild(row);
+    });
+    return group;
+  }
+
+  function renderHeadline(data) {
+    var band = document.getElementById("headline-band");
+    var empty = document.getElementById("headline-empty");
+    var grid = document.getElementById("headline-grid");
+    var contrast = band ? band.querySelector(".headline-contrast") : null;
+    var honesty = document.getElementById("headline-honesty");
+
+    var auto = (data && data.autodefaults) || {};
+    var dec = auto.decode || {};
+    var pre = auto.prefill || {};
+    var decomp = (data && data.decomposition) || {};
+
+    var haveDecode = typeof dec.baseline_no_flags === "number" && typeof dec.autodefault_no_flags === "number";
+    var havePrefill = typeof pre.baseline_no_flags === "number" && typeof pre.autodefault_no_flags === "number";
+    var haveNaive = havePrefill && typeof pre.naive_t2_workaround === "number";
+    var haveDecomp =
+      typeof decomp.default_threads_sme_on === "number" &&
+      typeof decomp.default_threads_sme_off === "number" &&
+      typeof decomp.t2_sme_on === "number" &&
+      typeof decomp.t2_sme_off === "number";
+
+    if (!data || (!haveDecode && !havePrefill)) {
+      if (empty) empty.hidden = false;
+      if (grid) grid.hidden = true;
+      if (contrast) contrast.hidden = true;
+      if (honesty) honesty.hidden = true;
+      return;
+    }
+    if (empty) empty.hidden = true;
+
+    // ---- Decode card ----
+    if (haveDecode) {
+      var decodeRatio = dec.autodefault_no_flags / dec.baseline_no_flags;
+      document.getElementById("headline-decode-ratio").textContent = fmtRatio(decodeRatio, 2) + " faster decode, zero flags";
+      document.getElementById("headline-decode-detail").textContent =
+        fmt(dec.baseline_no_flags, 1) + " → " + fmt(dec.autodefault_no_flags, 1) + " tok/s (round-robin interleaved, n=9).";
+      var decodeNote = document.getElementById("headline-decode-note");
+      if (typeof dec.hand_tuned_t2 === "number") {
+        var vsHandTuned = dec.autodefault_no_flags / dec.hand_tuned_t2;
+        decodeNote.textContent =
+          "Matches the hand-tuned -t 2 ceiling (" +
+          fmt(dec.hand_tuned_t2, 1) +
+          " tok/s) within noise (" +
+          fmtRatio(vsHandTuned, 3) +
+          ") — automatically, with no flags passed.";
+      }
+    }
+
+    // ---- Prefill card ----
+    if (havePrefill) {
+      var prefillRatio = pre.autodefault_no_flags / pre.baseline_no_flags;
+      document.getElementById("headline-prefill-ratio").textContent = "Prefill unchanged (" + fmtRatio(prefillRatio, 3) + ")";
+      document.getElementById("headline-prefill-detail").textContent =
+        fmt(pre.baseline_no_flags, 1) + " → " + fmt(pre.autodefault_no_flags, 1) + " tok/s — within measurement noise.";
+      document.getElementById("headline-prefill-note").textContent =
+        "The patch only changes generation (decode) threads; --threads-batch / prefill is left alone.";
+    }
+
+    // ---- Contrast bars: the decode win, and why the naive fix breaks prefill ----
+    var barsContainer = document.getElementById("headline-bars");
+    var introEl = document.getElementById("headline-contrast-intro");
+    if (barsContainer) barsContainer.textContent = "";
+
+    if (haveDecode) {
+      var decodeItems = [
+        { label: "Baseline, no flags", value: dec.baseline_no_flags, cls: "neutral", icon: "–" },
+      ];
+      if (typeof dec.hand_tuned_t2 === "number") {
+        decodeItems.push({ label: "Hand-tuned -t 2 (breaks prefill)", value: dec.hand_tuned_t2, cls: "bad", icon: "⚠" });
+      }
+      decodeItems.push({ label: "Autodefault patch, zero flags", value: dec.autodefault_no_flags, cls: "good", icon: "✓" });
+      barsContainer.appendChild(buildHeadlineBarGroup("Decode throughput (tok/s)", decodeItems));
+    }
+
+    if (haveNaive) {
+      var prefillItems = [
+        { label: "Baseline, no flags", value: pre.baseline_no_flags, cls: "neutral", icon: "–" },
+        { label: "Autodefault patch, zero flags", value: pre.autodefault_no_flags, cls: "good", icon: "✓", note: "unchanged" },
+        { label: "Naive workaround: pass -t 2, no -tb", value: pre.naive_t2_workaround, cls: "bad", icon: "✗", note: "collapses" },
+      ];
+      barsContainer.appendChild(buildHeadlineBarGroup("Prefill throughput (tok/s)", prefillItems));
+
+      var naiveRatio = pre.naive_t2_workaround / pre.baseline_no_flags;
+      var collapsePct = Math.round((1 - naiveRatio) * 100);
+      var prefillRatioForIntro = pre.autodefault_no_flags / pre.baseline_no_flags;
+      if (introEl) {
+        introEl.textContent =
+          "Passing -t 2 alone reaches the same decode ceiling, but stock llama.cpp's --threads-batch " +
+          "silently inherits --threads — so that \"obvious\" fix also collapses prefill by " +
+          collapsePct +
+          "% (" +
+          fmt(pre.baseline_no_flags, 1) +
+          " → " +
+          fmt(pre.naive_t2_workaround, 1) +
+          " tok/s, " +
+          fmtRatio(naiveRatio, 3) +
+          "). This patch is phase-aware — it changes only generation threads — so prefill stays at " +
+          fmtRatio(prefillRatioForIntro, 3) +
+          ", unchanged within noise.";
+      }
+    } else if (introEl) {
+      introEl.textContent = "Naive-workaround comparison data unavailable.";
+    }
+
+    // ---- Honesty check: how much is SME2 vs. generic thread tuning ----
+    var honestyText = document.getElementById("headline-honesty-text");
+    if (haveDecomp && honestyText) {
+      var total = decomp.t2_sme_on / decomp.default_threads_sme_on;
+      var threadTuningAlone = decomp.t2_sme_off / decomp.default_threads_sme_off;
+      var sme2AtT2 = decomp.t2_sme_on / decomp.t2_sme_off;
+      var sme2AtDefault = decomp.default_threads_sme_on / decomp.default_threads_sme_off;
+      honestyText.textContent =
+        "Of the " +
+        fmtRatio(total, 2) +
+        " you get pulling both levers together (fewer threads + SME2), " +
+        fmtRatio(threadTuningAlone, 2) +
+        " is generic thread-oversubscription avoidance alone (SME2 forced off throughout — a well-known " +
+        "Apple Silicon effect, not this project's discovery). SME2's own contribution at the tuned thread " +
+        "count is a smaller, real " +
+        fmtRatio(sme2AtT2, 2) +
+        ". At the untuned default, SME2 actively hurts (" +
+        fmtRatio(sme2AtDefault, 2) +
+        ").";
+    } else if (honestyText) {
+      honestyText.textContent = "Decomposition data unavailable.";
+    }
   }
 
   // ----------------------------------------------------------------------
@@ -677,13 +858,19 @@
   // ----------------------------------------------------------------------
   function main() {
     initTheme();
+    // headline.json doesn't depend on the manifest -- start it immediately
+    // rather than waiting on the manifest round-trip first.
+    var headlineP = loadHeadline();
     loadManifest().then(function (manifest) {
       var ledgersP = loadDispatchLedgers(manifest.dispatch_ledgers || []);
       var benchP = loadBenchFiles(manifest.bench || []);
 
-      Promise.all([ledgersP, benchP]).then(function (res) {
+      Promise.all([ledgersP, benchP, headlineP]).then(function (res) {
         var ledgers = res[0];
         var benchDatasets = res[1];
+        var headline = res[2];
+
+        renderHeadline(headline);
 
         var configs = flattenConfigs(ledgers);
         var stats = renderHeroTable(configs);

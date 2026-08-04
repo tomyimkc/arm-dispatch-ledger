@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# claims.yml — the consistency gate for this repo's numeric claims.
+#
+# Runs tools/check_claims.py (stdlib-only Python; no build, no third-party
+# deps, no GPU/Arm hardware needed) against every push and every pull
+# request, on plain ubuntu-latest. It fails the build if:
+#   - a live numeric claim in README.md/docs/*.md/site/ is not backed by
+#     either docs/CLAIMS.md's registry or a real number committed under
+#     results/**/*.json, or
+#   - a previously-retracted figure (the fabricated "+57.3%" episode; see
+#     results/REMEASURE-2026-08-04-QUIET.md) reappears anywhere without
+#     being inside a section that itself carries retraction language, or an
+#     explicit, reasoned exemption in the registry.
+#
+# See docs/CLAIMS.md for the full pattern, how to add a claim, and the
+# rationale (this repo has shipped a wrong number before; this is the
+# structural fix, not a promise not to do it again).
+
+name: claims
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claims-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-claims:
+    name: Check numeric claims registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run tools/check_claims.py
+        run: python3 tools/check_claims.py -v

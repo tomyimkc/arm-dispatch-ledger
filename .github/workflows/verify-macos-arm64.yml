@@ -117,6 +117,23 @@ jobs:
       - name: Run correctness tests
         run: bash scripts/lib/run_correctness_tests.sh
 
+      - name: L3 lldb probe ground-truth test
+        # Gates the dispatch verifier itself against a known call count before this
+        # lane trusts any "SME2 dispatched N times" number below — 100% of that
+        # evidence comes from this same lldb probe. The Linux/gdb counterpart
+        # (tests/l3_gdb_groundtruth/) exists because gdb's first probe revision
+        # silently reported 0 hits for every config on real CI; this test proves the
+        # lldb probe was never checked against a ground truth either, then checks it.
+        # See tests/l3_lldb_groundtruth/run_test.sh's header for the full rationale
+        # (including a real bug the ground-truth fixture itself found while being
+        # written). Deliberately NOT continue-on-error: an uninstrumented or
+        # miscounting probe must fail this build, never quietly ship a wrong number.
+        # Model-independent (synthetic fixture), so it does not need the model/build
+        # steps above it and could in principle run earlier — kept here, mirroring
+        # the free-arm64 lane's gdb step placement, right after correctness and
+        # before the real dispatch sweep that depends on this probe being trustworthy.
+        run: bash tests/l3_lldb_groundtruth/run_test.sh 7
+
       - name: Verify dispatch (thread sweep) — Finding 1 demonstration
         # This is the step that produces Finding 1's hallmark result: real
         # SME2 dispatch at low thread counts, silent NEON fallback at
