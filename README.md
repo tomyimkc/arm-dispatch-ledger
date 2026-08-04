@@ -9,6 +9,8 @@ The verifier (`tools/verify_dispatch.py`) is the *method* used throughout this a
 product; it ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch,
 a results dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
 
+**Live dashboard:** <https://tomyimkc.github.io/arm-dispatch-ledger/> — the advertised-vs-executed ledger, rendered from the committed JSON in `results/`, published by `.github/workflows/pages.yml` on every push to `main`.
+
 **The optimization, re-measured 2026-08-04 on this repo's own hardware (Apple M4 Max, `llama-bench
 -r 1`, n=7, round-robin interleaved against external load, median ± stdev — full table below):**
 matching thread count to phase — `-t 2` for decode, `-t 8`/`-tb 8` for prefill, both flags
