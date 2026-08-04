@@ -9,6 +9,22 @@ SPDX-FileCopyrightText: 2026 Arm Dispatch Ledger contributors
 **Status:** local, opt-in, unverified for speedup (see "What this patch does NOT claim" below).
 **Upstream issue this answers:** https://github.com/ggml-org/llama.cpp/issues/26547
 
+## License / attribution
+
+This patch is a **derivative work of MIT-licensed code**: `ggml-org/llama.cpp`
+(https://github.com/ggml-org/llama.cpp/blob/master/LICENSE) is MIT-licensed, and every
+line this patch touches or adds lives inside `ggml/src/ggml-cpu/kleidiai/kleidiai.cpp`,
+an existing MIT-licensed file in that project — this patch does not introduce new
+Apache-2.0-licensed code into llama.cpp, and llama.cpp's own MIT terms (not this
+repository's Apache-2.0 license) govern the patched file once applied there. This
+repository stores only the `.patch` diff (a description of a change), never a vendored
+or forked copy of `kleidiai.cpp` itself — see `docs/SUBMISSION.md`'s "What changed after
+2026-06-04" section for the no-vendoring statement. If/when this patch is opened as a
+pull request against `ggml-org/llama.cpp` (`docs/UPSTREAM-PR.md`), it is offered back to
+that project under its own MIT license and contributor terms, consistent with how the
+patch was developed (against an unmodified MIT-licensed `dbadb68` checkout, never
+against a copy relicensed under this repository's Apache-2.0 terms).
+
 ## The problem, in one sentence
 
 KleidiAI's SME dispatch decision caps SME threads uniformly for every `MUL_MAT` shape, which

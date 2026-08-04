@@ -191,6 +191,145 @@ this project measured — see `tools/protocol.md` §6 item 5.
 
 ---
 
+## Optimization — the measured phase crossover, and a patch for part of it
+
+> **Authoritative for this section:** `results/OPTIMIZATION.md`. If any number below disagrees with
+> that file, that file is right. This section adds the exact `kleidiai.cpp` line citations for the
+> patch's mechanism and summarizes the measured evidence; it does not supersede the verdict file.
+
+### The measured crossover
+
+Finding 1's root cause (`ne11`-gated hybrid dispatch) predicts a phase-dependent throughput
+crossover: decode should prefer SME2 at the capped thread count, prefill should prefer NEON once
+given its own natural thread count. Two independently written harnesses measured this from scratch
+and agree qualitatively:
+
+| Harness | decode optimum | prefill optimum |
+|---|---|---|
+| `tools/bench.py` (`results/SUMMARY.md`) | `threads=2`, SME on: **327.6 tok/s** | `threads=8`, SME off: **2,676.4 tok/s** |
+| `tools/crossover.py` (`results/crossover/crossover-apple-m4-max.md`) | `threads=2`, SME on: **305.4 ± 52.88 tok/s** (n=5) | `threads=8`, SME off: **2,615.6 tok/s** |
+
+The ~7% gap between the two decode numbers is run-to-run variance on this shared, multi-agent
+machine (both harnesses' `≤8`-thread cells agree within ~2% overall), not a methodology
+disagreement — see each file's own contention notes.
+
+`llama.cpp` already exposes the *thread-count* half of this as two separate CLI flags,
+`-t`/`--threads` (generation) and `-tb`/`--threads-batch` (prompt/batch) — so a split-phase
+invocation (`llama-cli -t 2 -tb 8`) is expressible today, with zero code changes.
+`tools/crossover.py`'s own instrumentation of the true no-flags default (`hw.perflevel0.physicalcpu`
+resolves to **12** threads on this machine, not the 16 physical cores) makes the before/after
+concrete:
+
+| Configuration | decode tok/s (n=5) | prefill tok/s (n=5) |
+|---|---:|---:|
+| `llama.cpp` default (no `-t`/`-tb`) | 45.5 ± 7.71 | 1,145.0 ± 136.05 |
+| `-t 2 -tb 8`, `GGML_KLEIDIAI_SME` off | **198.9 ± 16.85** (4.4x) | **2,257.5 ± 170.03** (2.0x) |
+
+Source: `results/OPTIMIZATION.md` §2(a)/(b); raw JSON: `results/crossover/crossover-apple-m4-max.json`.
+
+### Why the dispatcher can't do this itself: `GGML_KLEIDIAI_SME` is process-global, read once
+
+The *kernel-family* half of the split (SME2 for decode, NEON forced for prefill, in the same
+process) is not expressible, because `GGML_KLEIDIAI_SME` is read exactly once, lazily, on the first
+KleidiAI call, and cached for the rest of the process:
+
+```c
+// kleidiai.cpp:193-198 (init_kleidiai_context) — lazy, one-shot init guard
+static void init_kleidiai_context(void) {
+    ggml_critical_section_start();
+    static bool initialized = false;
+    if (!initialized) {
+        initialized = true;
+        // kleidiai.cpp:201
+        const char *env_sme = getenv("GGML_KLEIDIAI_SME");
+        ...
+```
+
+One process picks one SME policy at startup and keeps it for every `MUL_MAT` call thereafter,
+decode and prefill alike. That is the missing capability: the thread-count knob is per-invocation
+(`-t`/`-tb`), but the kernel-family knob is per-process. This project's patch targets the
+*thread-count-gating* side of the problem (letting decode reach the existing hybrid path above the
+cap); it does **not** touch this process-global limitation — see the verdict below.
+
+### The patch's mechanism, with exact line citations
+
+`patches/0001-kleidiai-phase-aware-dispatch.patch` (`ggml/src/ggml-cpu/kleidiai/kleidiai.cpp`, 56
+insertions / 3 deletions, applied on top of `dbadb68` as commit `ef973b1` in
+`/tmp/llama-phase-aware`). Line numbers below are from the **patched** file:
+
+1. **New context field**, `kleidiai.cpp:70`: `bool phase_aware_dispatch;` added to
+   `struct ggml_kleidiai_context`, default-initialized `false`.
+2. **New env var read**, `kleidiai.cpp:208`: `getenv("GGML_KLEIDIAI_PHASE_AWARE")`, parsed at
+   `kleidiai.cpp:232-238` and stored into `ctx.phase_aware_dispatch` only if the value is truthy —
+   symmetric with how `GGML_KLEIDIAI_SME` itself is parsed a few lines above it in the same
+   init-once block. Logged once at `kleidiai.cpp:330-331` (`GGML_LOG_INFO`) when set.
+3. **The actual dispatch-site change**, `kleidiai.cpp:1127-1140` (the same call site documented in
+   Finding 1 above, originally `kleidiai.cpp:1094-1112` pre-patch):
+
+   ```c
+   // kleidiai.cpp:1137-1140 (patched)
+   const bool phase_aware_gemv = ctx.phase_aware_dispatch && is_gemv &&
+                                  sme_slot != -1 && non_sme_slot != -1;
+   const bool too_small_for_hybrid = (min_cols_per_thread < 2) ||
+                                      (!phase_aware_gemv && ne11 < 128);
+   ```
+
+   With the flag unset, `phase_aware_gemv` is always `false`, so `too_small_for_hybrid` evaluates
+   identically to the pre-patch expression — the patch is a no-op unless explicitly opted into. With
+   the flag set, a GEMV op (`is_gemv`, i.e. `ne11 == 1` — decode) with both an SME and a non-SME
+   kernel slot available bypasses only the `ne11 < 128` term; the `min_cols_per_thread < 2` guard is
+   untouched. This routes decode through the **same** hybrid thread-assignment code prefill already
+   uses (`hybrid_enabled` at `kleidiai.cpp:1142`) — deliberately reused rather than reimplemented, to
+   avoid a barrier-deadlock risk: this threadpool model requires every thread in `[0, nth_total)` to
+   reach the same barriers the same number of times per op, so an earlier draft that left excess
+   threads idle instead of routing them to the NEON slot was rejected during design.
+4. **One-shot warning for the default (flag-off) path**, `kleidiai.cpp:1157-1160`: mirrors the
+   file's existing weight-type-fallback warning pattern (`static std::atomic<bool> warned` guard),
+   fires once per process when a GEMV op collapses to NEON because `nth_total > sme_thread_cap`,
+   naming the exact knob (`-t <= sme_thread_cap`, or `GGML_KLEIDIAI_PHASE_AWARE=1`) that recovers it.
+
+### The dispatch-level proof
+
+Symbol-level (`tools/verify_dispatch.py`, `lldb`, auto-continuing breakpoint on
+`kai_run_matmul.*sme`, true per-symbol call counts), same patched binary, only
+`GGML_KLEIDIAI_PHASE_AWARE` toggled — an apples-to-apples single-binary A/B on the dispatch decision
+itself:
+
+| threads | workload | flag OFF (hits: SME2 / other) | flag ON (hits: SME2 / other) |
+|---:|---|---|---|
+| 4 | decode_short | **0 / 15,936** — exact match to Finding 1's pre-patch ground truth | **3,072 / 10,428** (3,072/13,500 total) |
+| 8 | decode_short | **0 / 31,872** | **2,354 / 20,517** (2,354/22,871 total) |
+
+Full JSON: `results/dispatch-ledger-darwin-arm64-patched-flag-{off,on}.json`. This is the decisive
+evidence that the patch changes *dispatch*, not merely the selection-log text: SME2 goes from zero
+calls to thousands of calls in the identical binary, workload, and thread count, with only the env
+var different.
+
+### Measured verdict — real dispatch change, no ceiling win
+
+Throughput at the thread counts where the patch activates does **not** clear the bar the dispatch
+proof might suggest:
+
+| threads | decode, baseline (no patch) | decode, patched (`PHASE_AWARE=1`) | delta |
+|---:|---:|---:|---:|
+| 4 (patch active) | 258.2 ± 11.44 | 246.7 ± 6.66 | −4.5% (overlapping noise bands) |
+| 8 (patch active) | 143.3 ± 10.66 | 149.2 ± 10.94 | +4.1% (statistical tie) |
+
+Neither cell approaches the `-t 2` ceiling (~305 tok/s) that requires no patch at all. The patch's
+one clean, attributable win is the true llama.cpp default (no `-t`/`-tb`, 12 threads on this
+machine): **decode 45.5 → 71.6 tok/s, +57.3%**, closing roughly 10% of the absolute gap to the
+ceiling (26.1 of 259.5 tok/s) for the specific case of a user who never sets a thread flag. It does
+not beat the hand-tuned `-t 2 -tb 8` split (198.9–214.7 tok/s decode across the SME states measured),
+and it does not touch the process-global `GGML_KLEIDIAI_SME` limitation above — the theoretical best
+(SME2-decode + NEON-forced-prefill, simultaneously, in one process) remains `[NOT YET ACHIEVABLE]`,
+patched or not. Full numbers, every caveat, and the contention context both sweeps ran under:
+`results/OPTIMIZATION.md`.
+
+**Reported upstream, with an offer to send this patch:**
+[ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547).
+
+---
+
 ## Finding 2 — the SVE kernel family requires an exact 256-bit vector width
 
 ```c

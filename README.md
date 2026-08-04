@@ -1,14 +1,31 @@
 # Arm Dispatch Ledger
 
-**A kernel can be compiled in, advertised in the startup banner, and never execute once — and a
-timing-only benchmark will never tell you.** This project builds a symbol-level dispatch verifier
-for `llama.cpp`'s KleidiAI CPU backend, uses it to prove that on Apple Silicon, and ships the
-verifier, an MCP server, and a small hand-written Arm kernel library as reusable artifacts.
+**`llama.cpp` already has the flags to fix this. Nobody uses them, because the tool's own banner
+says the fast kernel is already running.** This project verifies that it isn't (a symbol-level
+dispatch bug in `llama.cpp`'s KleidiAI CPU backend), measures the per-phase performance cost of
+that bug, finds the exact source-level reason the dispatcher can't correct itself, patches that
+reason, measures the patch honestly — including where it falls short — and reports it upstream.
+The verifier (`tools/verify_dispatch.py`) is the *method* used throughout this arc, not the whole
+product; it ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch,
+a results dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
 
-**Headline finding, measured on this repo's own hardware (Apple M4 Max, real `lldb` breakpoints, not
-inferred):** at `llama.cpp`'s *default* thread count (physical core count — 16 on this machine),
-single-token decode **never dispatches SME2**, even though the startup banner and the runtime log
-both keep claiming `SME2 enabled` on every single one of those runs.
+**The optimization, measured on this repo's own hardware (Apple M4 Max, `tools/crossover.py`, n=5,
+interleaved, median ± stddev — full table below):** matching thread count to phase —
+`-t 2` for decode, `-tb 8` for prefill, both flags `llama.cpp` already ships — beats the default
+config by **4.4x on decode (45.5 → 198.9 tok/s) and 2.0x on prefill (1,145.0 → 2,257.5 tok/s),
+today, with zero code changes.** Nobody does this by default because of Finding 1 below: a
+hardcoded per-chip thread cap silently excludes decode from the fast kernel while the startup
+banner keeps claiming that kernel is in use. We also wrote and measured an opt-in patch
+(`patches/0001-kleidiai-phase-aware-dispatch.patch`) that recovers *part* of this gap automatically
+for a user who never touches a thread flag at all — **decode 45.5 → 71.6 tok/s, +57.3%, proven at
+the symbol level** — reported plainly alongside the honest limit: it does not beat hand-tuning and
+does not raise the ceiling. See "The optimization" section below for the full before/after table,
+the patch's mechanism, and the symbol-level dispatch proof.
+
+**The hook that started this — measured with real `lldb` breakpoints, not inferred:** at
+`llama.cpp`'s *default* thread count (physical core count — 16 on this machine), single-token
+decode **never dispatches SME2**, even though the startup banner and the runtime log both keep
+claiming `SME2 enabled` on every single one of those runs.
 
 ```
 threads=1   decode: SME2 fires (996 lldb hits)         <- advertised AND executed
@@ -18,9 +35,9 @@ threads=16  decode: SME2 fires ZERO times (51,214 NEON hits instead)   <- advert
 
 All numbers in this document were produced by code in this repo, run for real on real Arm
 hardware. Anything not yet measured is marked `[not yet measured]` — never invented, never
-interpolated. See `results/SUMMARY.md` for the full run log and `results/GROUND-TRUTH-DISPATCH.md`
-for the authoritative, corrected dispatch rule (an earlier draft of this finding was incomplete —
-see "The correction" below).
+interpolated. See `results/OPTIMIZATION.md` for the full optimization verdict, `results/SUMMARY.md`
+for the diagnosis run log, and `results/GROUND-TRUTH-DISPATCH.md` for the authoritative, corrected
+dispatch rule (an earlier draft of this finding was incomplete — see "The correction" below).
 
 ---
 
@@ -224,6 +241,75 @@ should be read as "this regime is unstable," not a precise point estimate.
 
 ---
 
+## The optimization — matching thread count to phase, and what a patch can and can't fix
+
+The `bench.py` sweep above measured the phase-dependent crossover. A second, independently written
+harness (`tools/crossover.py`, its own methodology doc at `tools/crossover.md`) re-derived the same
+optima from scratch: decode optimum `threads=2, SME=on` (median **305.4 tok/s**, vs. `bench.py`'s
+327.6 — different session, same machine, within normal run-to-run variance on this shared box) and
+prefill optimum `threads=8, SME=off/NEON` (median **2,615.6 tok/s**, vs. `bench.py`'s 2,676.4).
+Two independent tools, two independent runs, the same qualitative answer: **decode wants
+SME2 + few threads; prefill wants NEON + many threads.**
+
+### Why the dispatcher can't just do this itself
+
+`llama.cpp` already exposes the fix as two separate flags — `-t`/`--threads` for decode,
+`-tb`/`--threads-batch` for prefill — so the *thread-count* half of this is expressible today. The
+*kernel-family* half is not: `GGML_KLEIDIAI_SME` is parsed exactly once, lazily, on the first call
+into KleidiAI (`init_kleidiai_context()`'s `static bool initialized` guard, `kleidiai.cpp:193–198`;
+the `getenv("GGML_KLEIDIAI_SME")` read itself at `kleidiai.cpp:201`) and cached for the rest of the
+process. One `llama-cli` process cannot run SME2-for-decode and NEON-forced-for-prefill at the same
+time — it picks one kernel-family policy at startup and keeps it. That is the missing capability
+this project's patch targets (full mechanism and line citations: `docs/FINDINGS.md`).
+
+### Before / after, decode and prefill separate, with variance (`tools/crossover.py`, n=5, median ± stddev)
+
+| Configuration | decode tok/s | prefill tok/s | Requires code changes? |
+|---|---:|---:|---|
+| `llama.cpp` default (no `-t`/`-tb`; resolves to **12** threads on this machine, not 16 — verified via `llama-cli -v`) | 45.5 ± 7.71 | 1,145.0 ± 136.05 | — |
+| **Hand-tuned split** (`-t 2 -tb 8`, `GGML_KLEIDIAI_SME` off) — achievable **today** | **198.9 ± 16.85** (**4.4x** vs default) | **2,257.5 ± 170.03** (**2.0x** vs default) | **No** |
+| Phase-aware patch, `GGML_KLEIDIAI_PHASE_AWARE=1`, **default thread count** (no `-t`/`-tb` at all) | 71.6 ± 11.18 (**+57.3%** vs default) | 1,328.4 ± 267.51 (noise — patch's diff never touches prefill's code path) | Yes, opt-in |
+| Phase-aware patch + best thread settings | resolves to the identical `-t 2 -tb 8` — patch's own branch never activates at `nth_total == sme_thread_cap`, so this **cannot exceed** the hand-tuned row above | (same) | Yes, opt-in |
+
+Source: `results/OPTIMIZATION.md` §2 (rows (a)–(d)); raw JSON in `results/crossover/` and
+`results/crossover/patched/`.
+
+### The patch — opt-in, symbol-level proven, ceiling unchanged
+
+`patches/0001-kleidiai-phase-aware-dispatch.patch` (56 insertions / 3 deletions, one file, no new
+deps) adds `GGML_KLEIDIAI_PHASE_AWARE=1` (default off). When set, a GEMV-shaped op (`ne11 == 1`,
+i.e. decode) is let into the *existing* SME+NEON hybrid path instead of unconditionally collapsing
+to NEON once `nth_total > sme_thread_cap` — reusing prefill's already-correct hybrid
+thread-assignment code verbatim rather than inventing a new one (a naive "leave extra threads idle"
+design was rejected during design: this threadpool model requires every thread to reach the same
+barriers the same number of times per op, and idling threads risks a deadlock). Full mechanism,
+diff walkthrough, and design rationale: `patches/README.md` and `docs/FINDINGS.md`.
+
+**Symbol-level dispatch proof** (`tools/verify_dispatch.py`, same patched binary, only the env var
+changes — an apples-to-apples single-binary A/B):
+
+| threads | flag OFF, hits (SME2/other) | flag ON, hits (SME2/other) | verdict |
+|---:|---|---|---|
+| 4, decode | **0 / 15,936** — exact match to the pre-patch ground truth | **3,072 / 10,428** | dispatch genuinely changes |
+| 8, decode | **0 / 31,872** | **2,354 / 20,517** | dispatch genuinely changes |
+
+This is real proof the patch does what it claims at the dispatch level, not a selection-log
+artifact. **But it does not raise the ceiling.** At the thread counts where the patch actually
+activates (4, 8), its hybrid decode throughput (246.7 and 149.2 tok/s) is a wash-to-slight-regression
+against the unpatched NEON collapse at those same thread counts (258.2 and 143.3 — overlapping noise
+bands), and neither comes close to the pre-existing `-t 2` ceiling (~305 tok/s, no patch needed).
+The patch's only clean, honest win is the specific case of a user who passes **no** thread flags at
+all: decode +57.3%, automatically — closing about 10% of the absolute gap to the ceiling (26.1 of
+259.5 tok/s), not the gap itself. It does not beat hand-tuning, and it does not touch the
+process-global `GGML_KLEIDIAI_SME` limitation described above — the *theoretical* best (SME2-decode
++ NEON-forced-prefill, simultaneously, in one process) remains **`[NOT YET ACHIEVABLE]`** with or
+without this patch. Full verdict with every caveat: `results/OPTIMIZATION.md`.
+
+**Reported upstream:** [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)
+(filed 2026-08-04, both findings, reproduction commands, and an offer to send this patch).
+
+---
+
 ## The hand-written microkernels (`kernels/`)
 
 **Their honest role is to prove the silicon is not the limiter — not to claim they beat a vendor
@@ -361,13 +447,18 @@ non-TTY stdin.
 | Artifact | Reusable for |
 |---|---|
 | `tools/verify_dispatch.py` | Stdlib-only Python. Point it at **any** `llama.cpp`-family binary + GGUF and get a real L1/L2/L3 dispatch verdict — not specific to this project's model or machine. |
+| `tools/crossover.py` + `tools/crossover.md` | A phase-crossover benchmark harness: sweeps threads × `GGML_KLEIDIAI_SME` × phase, interleaved reps, retry-on-timeout, and reports the default / hand-tuned-split / theoretical-best configs for **any** `llama.cpp`-family binary — the tool that found and quantified the optimization this README leads with. |
+| `patches/0001-kleidiai-phase-aware-dispatch.patch` + `patches/README.md` | A minimal (56-line), opt-in, upstream-submittable `llama.cpp` patch plus its full design rationale and local verification log — apply with `git am` against `dbadb68`. Reusable as-is by anyone hitting the same GEMV/hybrid-dispatch gate, or as a worked example of how to extend KleidiAI's dispatch decision safely. |
 | `mcp/server.py` | Dependency-free MCP stdio server exposing `detect_arm_features`, `verify_dispatch`, `recommend_config`, and `explain_finding` as callable tools — so an agentic client can ask *this machine, right now* whether SME2/SVE is actually dispatching, instead of trusting a banner. Add to Claude Code with `claude mcp add arm-dispatch-ledger -- python3 mcp/server.py`; self-test with `python3 mcp/server.py --selftest`. See `mcp/README.md`. |
 | `kernels/` | A small, dependency-free, correctness-tested NEON/SME2/SVE2 GEMM library with a `CMakeLists.txt` that already encodes the Apple-vs-Linux `-mcpu` selection (and the SIGILL trap fix) — usable as a starting template for anyone porting compute onto Apple SME2 or Arm SVE2. |
+| `site/` + `.github/workflows/pages.yml` | A static, no-build-step dashboard (advertised-vs-executed table, phase-crossover charts, figure gallery) driven entirely off `results/*.json` via a runtime-generated manifest — new results from any of the artifacts above show up with no code change. Validated locally (`actionlint`, headless-Chrome DOM checks); not yet deployed (`has_pages=false`, nothing pushed). |
+| `scripts/models.txt` + `scripts/lib/fetch_model.sh` | A pipe-delimited model manifest (id, HF repo/file, sha256, license) plus a fetcher with single-model, model-set, and CI-matrix modes — turns "add a row" into "add a CI leg." Live-checks license (already caught and rejected a non-commercial GGUF). |
+| `demo/demo.sh` + `demo/README.md` + `demo/SHOTLIST.md` | A self-contained, idempotent, degrade-gracefully terminal walkthrough of the full claim → proof → cost → fix → gap → upstream arc, timed and narrated for the submission video. |
 | `scripts/run_all.sh` + `scripts/lib/*.sh` | An idempotent, cache-aware, CI-ready pipeline (build → verify dispatch → bench → emit ledger) that already runs on three different Arm64 targets. |
 | **[ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)** | **Filed upstream 2026-08-04.** Both findings reported to the maintainers with reproduction commands, exact source line citations, and an offer to send the patch. Contribution back to the ecosystem, not just consumption of it. Draft and rationale retained in `docs/UPSTREAM-ISSUE.md`. |
-| `results/GROUND-TRUTH-DISPATCH.md` + `docs/FINDINGS.md` | The evidence chain behind that issue, including the documented precedent (`llama.cpp` PR #25701 added exactly this kind of silent-fallback warning for a different case) for why a `GGML_LOG_WARN` on `SILENT_FALLBACK` is a reasonable ask. |
+| `results/GROUND-TRUTH-DISPATCH.md` + `docs/FINDINGS.md` + `results/OPTIMIZATION.md` | The evidence chain behind that issue and the optimization verdict, including the documented precedent (`llama.cpp` PR #25701 added exactly this kind of silent-fallback warning for a different case) for why a `GGML_LOG_WARN` on `SILENT_FALLBACK` is a reasonable ask. |
 | `tests/l3_gdb_groundtruth/` | A dlopen-based harness that asserts the L3 probe recovers a *known* call count. Written after our own gdb probe silently reported zero hits on the free CI lane — the exact failure mode this project exists to catch. Reusable by anyone instrumenting a dynamically-loaded kernel library. |
-| Three CI lanes (`.github/workflows/`) | A template for a free-hosted judge-reproducible lane plus two self-hosted lanes with correctly scoped `pull_request` exclusions for physical hardware. |
+| Three verify CI lanes (`.github/workflows/verify-*.yml`) | A template for a free-hosted judge-reproducible lane plus two self-hosted lanes with correctly scoped `pull_request` exclusions for physical hardware; the free lane now runs as a model matrix derived from `scripts/models.txt`. |
 
 ---
 
@@ -384,8 +475,38 @@ non-TTY stdin.
 - **Single model.** All throughput numbers are `Qwen2.5-0.5B-Instruct`, `Q4_0` only. `Q8_0` is
   `[not available]` — no such GGUF existed in this environment, and none was fabricated by
   up-converting the lossy `Q4_0` file.
-- **`threads=4` is missing from the throughput sweep** (`tools/bench.py`'s grid used `1,2,8`; the
+- **`threads=4` is missing from the `bench.py` throughput sweep** (its grid used `1,2,8`; the
   16-thread cells that are present are high-variance and should be read directionally).
+  `tools/crossover.py`'s independent sweep does cover `threads=4`, and both harnesses' overlapping
+  cells (`≤8` threads) agree within ~2%.
+- **The phase-aware patch does not raise the performance ceiling and does not beat hand-tuning.**
+  Its only clean win is the true-default (no `-t`/`-tb`) case (decode +57.3%); at the thread counts
+  where its hybrid path actually activates (4, 8) it is a statistical tie-to-slight-regression
+  against the unpatched NEON collapse, and no configuration found with the patch beats the
+  pre-existing `-t 2` config, patch or no patch. Full numbers: `results/OPTIMIZATION.md`.
+- **The patch is Apple-only by construction** (`detect_num_smcus()`, the function that sets
+  `sme_thread_cap`, is an `__APPLE__`-only code path) — it has no effect on the Neoverse-N2 free CI
+  lane or the DGX Spark, neither of which has SME2.
+- **`-t 16` decode dispatch for the patched binary was not confirmed by a completed `lldb` sweep** —
+  this session's shared-machine contention made a full symbol-count capture at that thread count
+  impractical; it was instead confirmed via a temporary source-level diagnostic log showing the
+  same decision path as the `lldb`-confirmed `-t 4` case. `[recommend re-running the `-t 16` lldb
+  sweep on a quieter machine before citing that cell]`. Both the baseline and patched `threads=16`
+  decode throughput cells failed to produce **any** successful `crossover.py` measurement in this
+  session (100% timeout, both sweeps) — `[not measured]`, not interpolated.
+- **The patched and baseline `crossover.py` sweeps ran ~40 minutes apart under measurably different
+  shared-machine load** (§5 of `results/OPTIMIZATION.md`); every "noise, not a patch effect" call in
+  that file was made because the stddev bands overlap or the code path is provably untouched by the
+  patch, never because a number was inconvenient. The symbol-level dispatch A/B (flag on vs. off,
+  same binary, same short session) is the more robust of the two comparisons.
+- **`GGML_KLEIDIAI_SME` remains a process-global setting**, patched or not — the *theoretical* best
+  (SME2-decode + NEON-forced-prefill, simultaneously, in one process) stays `[NOT YET ACHIEVABLE]`.
+  The patch closes part of the gap for the no-flags default case; it does not touch this limitation.
+- **The dashboard (`site/`) and the broadened model manifest (`scripts/models.txt`) are validated
+  locally, not on live infrastructure.** GitHub Pages is not enabled for this repo (`has_pages`
+  reported `false`) and nothing was pushed, so `pages.yml` has never actually run in GitHub Actions;
+  the model-matrix CI path in `verify-free-arm64.yml` is validated by `actionlint`, YAML parsing, and
+  local shell simulation of its non-trivial steps, not by a live run.
 - **`sve2_gemm.c`** compiles cleanly cross-compiled for `-march=armv9.2-a+sve2+i8mm+bf16` (real,
   reproducible ELF aarch64 object containing genuine `smmla`/`fmad` SVE2/i8mm instructions, not a
   stub — verified during adversarial review and persisted at
@@ -407,8 +528,13 @@ non-TTY stdin.
 ## License / attribution
 
 Apache-2.0 (see `LICENSE`). This project builds on and instruments — but does not fork or vendor —
-[`llama.cpp`](https://github.com/ggml-org/llama.cpp) and its [KleidiAI](https://github.com/ARM-software/kleidiai)
-CPU backend (`ggml/src/ggml-cpu/kleidiai/kleidiai.cpp`), both used at the pinned commit `dbadb68`.
-The demo model, [`Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct), is
-Apache-2.0 licensed. All findings, kernels, tooling, and CI in this repository are original work
-produced for the Arm Create: AI Optimization Challenge.
+[`llama.cpp`](https://github.com/ggml-org/llama.cpp) (MIT-licensed) and its
+[KleidiAI](https://github.com/ARM-software/kleidiai) CPU backend
+(`ggml/src/ggml-cpu/kleidiai/kleidiai.cpp`), both used at the pinned commit `dbadb68`.
+`patches/0001-kleidiai-phase-aware-dispatch.patch` is a diff against that MIT-licensed file — a
+derivative work under llama.cpp's own MIT terms, not relicensed as Apache-2.0 — stored here only as
+a patch file, never as a vendored/forked copy of `kleidiai.cpp` itself; see
+`patches/README.md`'s "License / attribution" section. The demo model,
+[`Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct), is Apache-2.0
+licensed. All findings, kernels, tooling, and CI in this repository are original work produced for
+the Arm Create: AI Optimization Challenge.
