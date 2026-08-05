@@ -1,0 +1,1 @@
+Build: `-DGGML_CPU_KLEIDIAI=ON`'s documented build line silently compiles zero `kai_run_matmul` kernels on gcc 13.3 + Cortex-X925 (banner still reports `KLEIDIAI = 1`); cost grows with model size
