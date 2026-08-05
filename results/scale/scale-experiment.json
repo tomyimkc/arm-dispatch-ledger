@@ -1,0 +1,200 @@
+{
+ "load_before": 0.43,
+ "reps": 5,
+ "note": "round-robin interleaved; median of REPS; llama-bench -r 1 per invocation",
+ "A_7b_thread_sweep": [
+  {
+   "id": "7B t=1",
+   "threads": 1,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 28.89,
+   "prefill_stdev": 0.14,
+   "prefill_n": 5,
+   "decode_median": 7.26,
+   "decode_stdev": 0.2,
+   "decode_n": 5
+  },
+  {
+   "id": "7B t=2",
+   "threads": 2,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 55.41,
+   "prefill_stdev": 0.78,
+   "prefill_n": 5,
+   "decode_median": 12.95,
+   "decode_stdev": 0.13,
+   "decode_n": 5
+  },
+  {
+   "id": "7B t=4",
+   "threads": 4,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 104.42,
+   "prefill_stdev": 0.92,
+   "prefill_n": 5,
+   "decode_median": 17.76,
+   "decode_stdev": 2.04,
+   "decode_n": 5
+  },
+  {
+   "id": "7B t=8",
+   "threads": 8,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 179.45,
+   "prefill_stdev": 3.76,
+   "prefill_n": 5,
+   "decode_median": 24.45,
+   "decode_stdev": 1.05,
+   "decode_n": 5
+  },
+  {
+   "id": "7B t=16",
+   "threads": 16,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 212.41,
+   "prefill_stdev": 1.27,
+   "prefill_n": 5,
+   "decode_median": 21.01,
+   "decode_stdev": 0.75,
+   "decode_n": 5
+  },
+  {
+   "id": "7B t=20",
+   "threads": 20,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 218.39,
+   "prefill_stdev": 2.49,
+   "prefill_n": 5,
+   "decode_median": 18.03,
+   "decode_stdev": 1.05,
+   "decode_n": 5
+  }
+ ],
+ "A_05b_thread_sweep": [
+  {
+   "id": "0.5B t=1",
+   "threads": 1,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 318.95,
+   "prefill_stdev": 6.43,
+   "prefill_n": 5,
+   "decode_median": 85.41,
+   "decode_stdev": 2.93,
+   "decode_n": 5
+  },
+  {
+   "id": "0.5B t=2",
+   "threads": 2,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 556.71,
+   "prefill_stdev": 5.35,
+   "prefill_n": 5,
+   "decode_median": 138.6,
+   "decode_stdev": 9.15,
+   "decode_n": 5
+  },
+  {
+   "id": "0.5B t=4",
+   "threads": 4,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 915.65,
+   "prefill_stdev": 11.77,
+   "prefill_n": 5,
+   "decode_median": 177.61,
+   "decode_stdev": 13.21,
+   "decode_n": 5
+  },
+  {
+   "id": "0.5B t=8",
+   "threads": 8,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 1457.68,
+   "prefill_stdev": 21.84,
+   "prefill_n": 5,
+   "decode_median": 190.32,
+   "decode_stdev": 8.93,
+   "decode_n": 5
+  },
+  {
+   "id": "0.5B t=16",
+   "threads": 16,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 1047.66,
+   "prefill_stdev": 51.97,
+   "prefill_n": 5,
+   "decode_median": 120.05,
+   "decode_stdev": 7.16,
+   "decode_n": 5
+  },
+  {
+   "id": "0.5B t=20",
+   "threads": 20,
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 965.98,
+   "prefill_stdev": 87.36,
+   "prefill_n": 5,
+   "decode_median": 45.49,
+   "decode_stdev": 6.43,
+   "decode_n": 5
+  }
+ ],
+ "B_finding3_cost": [
+  {
+   "id": "0.5B BROKEN build",
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 657.0,
+   "prefill_stdev": 51.29,
+   "prefill_n": 5,
+   "decode_median": 42.18,
+   "decode_stdev": 6.78,
+   "decode_n": 5
+  },
+  {
+   "id": "0.5B FIXED build",
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 933.63,
+   "prefill_stdev": 74.03,
+   "prefill_n": 5,
+   "decode_median": 41.7,
+   "decode_stdev": 6.86,
+   "decode_n": 5
+  },
+  {
+   "id": "7B BROKEN build",
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 48.64,
+   "prefill_stdev": 0.42,
+   "prefill_n": 5,
+   "decode_median": 11.17,
+   "decode_stdev": 0.37,
+   "decode_n": 5
+  },
+  {
+   "id": "7B FIXED build",
+   "pp": 128,
+   "tg": 32,
+   "prefill_median": 222.14,
+   "prefill_stdev": 4.94,
+   "prefill_n": 5,
+   "decode_median": 18.45,
+   "decode_stdev": 0.84,
+   "decode_n": 5
+  }
+ ],
+ "load_after": 12.32
+}

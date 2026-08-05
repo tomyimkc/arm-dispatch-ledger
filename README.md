@@ -66,6 +66,17 @@ symbol-level proven. See "The optimization" section below for the full before/af
 decomposition, the patch's mechanism, the symbol-level dispatch proof, and why the dispatch change
 doesn't translate into a throughput win.
 
+**Correction (2026-08-05): that 3.43x decode multiple does not generalize past a tiny model.** An
+independent thread-count sweep on a second machine (DGX Spark, Cortex-X925) across two model sizes
+shows the same class of win shrinking from **4.56x at 0.5B to a modest 1.33x at 7B** — see "Does the
+3.43x decode-tuning win generalize to a bigger model?" under "The optimization," below, and
+`results/scale/SCALE-EXPERIMENT.md` for the full data. The 93.6 → 321.0 tok/s / 3.43x figures above
+remain accurate for their own scope (Apple M4 Max, this exact 0.5B model) and are not being
+retracted; they should just not be read as a multiple that generalizes to larger models. The same
+build defect this project's verifier exists to catch (Finding 3, below) turns out to cost *more*, not
+less, at a realistic model size — 4.57x prefill / 1.65x decode at 7B, the largest speedup this
+project has measured from fixing a single build-time defect rather than tuning a runtime knob.
+
 *(An earlier version of the headline numbers above was wrong and has since been retracted and
 re-measured — see [Correction (2026-08-04)](#correction-2026-08-04) below for the full account.)*
 
@@ -290,6 +301,38 @@ path, and this document does not pretend it does.
 accelerated matmul kernel at all, produced by following `llama.cpp`'s own documented instructions,
 while every signal a user would normally check — a `0` exit code and a `KLEIDIAI = 1` banner line —
 says it worked.
+
+**The throughput cost of that build defect — measured, and it gets *bigger* at a realistic model
+size, not smaller.** Measured with `llama-bench` (`-p 128 -n 32`, 5 reps, round-robin interleaved,
+median ± population stdev — same DGX Spark; raw data `results/scale/scale-experiment.json`, full
+write-up `results/scale/SCALE-EXPERIMENT.md`), comparing this broken default build against the fixed
+rebuild above, at two model sizes:
+
+| model | phase | broken build | fixed build | ratio |
+|---|---|---:|---:|---:|
+| large | prefill | 48.64 ± 0.42 | 222.14 ± 4.94 | **4.57x** |
+| large | decode | 11.17 ± 0.37 | 18.45 ± 0.84 | **1.65x** |
+| small | prefill | 657.00 ± 51.29 | 933.63 ± 74.03 | 1.42x |
+| small | decode | 42.18 ± 6.78 | 41.70 ± 6.86 | 0.99x — no effect |
+
+("large" = `Qwen2.5-7B-Instruct-Q4_0`, "small" = `Qwen2.5-0.5B-Instruct-Q4_0`, both Apache-2.0,
+licence verified live via the HuggingFace API.)
+
+This is the largest speedup anywhere in this project that comes from fixing a single build-time
+defect rather than tuning a runtime knob — and unlike every thread-tuning multiple in this document
+(see "Does the 3.43x decode-tuning win generalize to a bigger model?" under "The optimization,"
+below), it gets **bigger**, not smaller, on a realistic model size: 4.57x prefill / 1.65x decode at
+7B, versus a barely-there 1.42x prefill and *no effect at all* (0.99x) on decode at 0.5B — the two
+results generalize in opposite directions, and neither should be read off the other. Read together
+with the thread-tuning collapse below, the honest picture is: at a toy 0.5B model, thread tuning
+looks dramatic and this build defect looks almost invisible; at a 7B model people actually run, that
+relationship inverts. **Polygraph detects the broken build; fixing it is the 4.57x.** The
+verification tool and the "make it faster" outcome are, here, the same thing.
+
+**One caveat that must travel with this number:** it is specific to a build where feature detection
+collapsed *entirely* — the broken banner above shows no `DOTPROD`, no `MATMUL_INT8`, and no `SVE`
+line at all, not merely a missing KleidiAI kernel. Read it as "this specific broken build, on this
+machine and toolchain, costs 4.57x at 7B prefill," not as a general "KleidiAI costs 4.57x" claim.
 
 **Status:** measured directly on this machine. Both the broken default build and the fixed rebuild
 were compiled and run on the same DGX Spark in the same session
@@ -531,6 +574,75 @@ dispatch discipline (not trusting the banner, not trusting a single-variable swe
 itself required. That is the defensible, non-obvious point here: not "we discovered the thread-
 tuning win," but "we could tell you exactly how much of it is SME2 and how much isn't, and why a
 naive benchmark can't."
+
+### Does the 3.43x decode-tuning win generalize to a bigger model? No — it collapses to 1.33x at 7B
+
+Everything above this point in "The optimization" was measured on a 337 MB, 0.5B model on Apple
+Silicon. A second, independently run experiment on a different machine — DGX Spark, GB10,
+Cortex-X925/Cortex-A725, gcc 13.3.0 — sweeps thread count for **two** model sizes,
+`Qwen2.5-0.5B-Instruct-Q4_0` and `Qwen2.5-7B-Instruct-Q4_0` (both Apache-2.0, licence verified live
+via the HuggingFace API), and the honest answer is that this repo's headline decode-tuning multiple
+does not generalize past a tiny model.
+
+Method: `llama-bench -p 128 -n 32`, 5 reps per config, **round-robin interleaved** (one rep of each
+config in turn, repeated, so load drift hits every config equally — the same discipline as the
+Apple M4 Max re-measurement above), median ± population stdev. Raw data:
+`results/scale/scale-experiment.json`. Full write-up, every caveat, and the prefill side of this
+same sweep in more depth: `results/scale/SCALE-EXPERIMENT.md`.
+
+**7B (`Qwen2.5-7B-Instruct-Q4_0`), thread sweep:**
+
+| threads | prefill tok/s | decode tok/s |
+|---:|---:|---:|
+| 1  | 28.89 ± 0.14 | 7.26 ± 0.20 |
+| 2  | 55.41 ± 0.78 | 12.95 ± 0.13 |
+| 4  | 104.42 ± 0.92 | 17.76 ± 2.04 |
+| 8  | 179.45 ± 3.76 | **24.45 ± 1.05** — decode peak |
+| 16 | 212.41 ± 1.27 | 21.01 ± 0.75 |
+| 20 | **218.39 ± 2.49** — prefill peak | 18.03 ± 1.05 |
+
+**0.5B (`Qwen2.5-0.5B-Instruct-Q4_0`), same method:**
+
+| threads | prefill tok/s | decode tok/s |
+|---:|---:|---:|
+| 1  | 318.95 ± 6.43 | 85.41 ± 2.93 |
+| 2  | 556.71 ± 5.35 | 138.60 ± 9.15 |
+| 4  | 915.65 ± 11.77 | 177.61 ± 13.21 |
+| 8  | **1457.68 ± 21.84** — both phases peak here | **190.32 ± 8.93** — both phases peak here |
+| 16 | 1047.66 ± 51.97 | 120.05 ± 7.16 |
+| 20 | 965.98 ± 87.36 | 45.49 ± 6.43 |
+
+`llama-bench`'s default thread count on this 20-core box resolves to 20 — confirmed by comparing a
+separate default-threads run (the Finding 3 throughput-cost table, above, whose "fixed build" row
+uses no `-t` flag) to the explicit `t=20` row above (0.5B decode: 41.70 vs. 45.49; 7B decode: 18.45
+vs. 18.03 — close but not identical, ordinary run-to-run noise between two separate `llama-bench`
+sessions, not the same measurement twice). Using that default-threads figure as "before" and each
+model's own peak decode thread count (`t=8`, both models) as "after":
+
+| model | default decode tok/s | peak decode tok/s (`t=8`) | ratio |
+|---|---:|---:|---:|
+| 0.5B | 41.70 | 190.32 | **4.56x** |
+| 7B | 18.45 | 24.45 | **1.33x** |
+
+**Say this plainly: the headline thread-tuning multiple this repo has been built around is largely
+an artefact of a tiny model. At a size people actually run, it is a modest 1.33x.** This does not
+retract the Apple M4 Max numbers above (93.6 → 321.0 tok/s, 3.43x) — they are real, correctly
+measured, and correctly scoped to their own machine and model. It means the scope matters: a 0.5B
+model on an M4 Max and a 0.5B model on a Cortex-X925 both show a large multiple (3.43x and 4.56x
+respectively); move to a 7B model on that same Cortex-X925 and the same class of thread-count tuning
+shrinks to 1.33x. Prefill is a separate curve and is never blended into this decode number — both
+models' prefill keeps improving out to `t=16`/`t=20` rather than peaking at `t=8` and collapsing the
+way decode does; see the two tables above for prefill's own numbers.
+
+**Caveats, stated plainly:** one machine (DGX Spark, Cortex-X925, gcc 13.3.0), one quant (`Q4_0`),
+two model sizes, `llama-bench` only — this is not a re-measurement of the Apple M4 Max headline
+itself, it is an independent demonstration that the underlying phenomenon (thread-count tuning
+delivering an outsized win) is size-dependent. `scale-experiment.json` records `load_before: 0.43`
+and `load_after: 12.32` — the 20-thread configuration in this sweep generates real, self-inflicted
+load on a 20-core box; round-robin interleaving protects every config-to-config comparison equally
+against that drift, but this is not a quiet, externally-idle host in the same sense as the Apple M4
+Max re-measurement's `results/REMEASURE-2026-08-04-QUIET.md`. Full method and every additional
+caveat: `results/scale/SCALE-EXPERIMENT.md`.
 
 ### Why the dispatcher can't just do this itself
 

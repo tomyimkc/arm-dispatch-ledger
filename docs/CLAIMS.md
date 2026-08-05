@@ -201,6 +201,31 @@ project's own no-overclaim discipline):
   the 16-client row (0.168s). `docs/DEVPOST-SUBMISSION.md` states the true range
   (89-221ms) and the spike, not a smoothed-over "stays under 170ms" claim.
 
+## New in this update: cross-model scale experiment (2026-08-05)
+
+`results/scale/scale-experiment.json` adds a single new raw-data file, measured on the same DGX
+Spark as the server lane above, that sweeps thread count for **two** model sizes
+(`Qwen2.5-0.5B-Instruct-Q4_0` and `Qwen2.5-7B-Instruct-Q4_0`) and re-measures the Finding 3
+build-defect throughput cost at both sizes. It is additive — no existing `results/` artifact was
+edited. Every claim below cites an exact `source_json_path` into that one file rather than a bare
+substring match, since it is JSON, not prose. This is a correction as much as an addition: it shows
+this project's own headline decode-tuning multiple (3.43x, measured on a 0.5B model on Apple
+Silicon) shrinking to 1.33x on a 7B model, and the Finding 3 build-defect cost moving the *opposite*
+direction (bigger, not smaller, on the 7B model) — see `README.md`'s "Does the 3.43x decode-tuning
+win generalize to a bigger model?" and the throughput-cost table under Finding 3.
+
+Registered below: the 24 thread-sweep medians (6 thread counts × 2 phases × 2 model sizes), the 8
+Finding-3 throughput-cost medians (2 builds × 2 phases × 2 model sizes), and the 6 derived ratios
+(`4.56x`, `1.33x`, `1.42x`, `0.99x`, `4.57x`, `1.65x`), each `compute`-verified against the two
+medians it derives from rather than substring-matched — the same discipline this file already
+applies to every other derived ratio in the registry (see "Why percentages are always
+hand-registered" above; the same reasoning applies to any *derived* number, ratios included, even
+though the tool's Tier 2 JSON-backing fallback does accept ratios). Per-rep standard deviations from
+this file are **not** separately registered below (out of this update's stated scope), but every
+`X ± Y tok/s` figure printed in `README.md` that carries one is still a real, raw leaf value in
+`results/scale/scale-experiment.json` and passes the checker's Tier 2 JSON-backing fallback on its
+own merits.
+
 ## The registry
 
 <!-- CLAIMS-REGISTRY:BEGIN -->
@@ -915,6 +940,326 @@ project's own no-overclaim discipline):
       "value_text": "16",
       "source_file": "results/server/spark-provenance.txt",
       "note": "SVE_CNT reported by the fixed build's system_info banner -- 128-bit SVE, below the 256-bit gate kleidiai.cpp:209 checks, so I8MM is selected over SVE"
+    },
+    {
+      "id": "scale-7b-t1-prefill",
+      "value_text": "28.89",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[0].prefill_median",
+      "note": "7B, threads=1, prefill median"
+    },
+    {
+      "id": "scale-7b-t1-decode",
+      "value_text": "7.26",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[0].decode_median",
+      "note": "7B, threads=1, decode median"
+    },
+    {
+      "id": "scale-7b-t2-prefill",
+      "value_text": "55.41",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[1].prefill_median",
+      "note": "7B, threads=2, prefill median"
+    },
+    {
+      "id": "scale-7b-t2-decode",
+      "value_text": "12.95",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[1].decode_median",
+      "note": "7B, threads=2, decode median"
+    },
+    {
+      "id": "scale-7b-t4-prefill",
+      "value_text": "104.42",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[2].prefill_median",
+      "note": "7B, threads=4, prefill median"
+    },
+    {
+      "id": "scale-7b-t4-decode",
+      "value_text": "17.76",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[2].decode_median",
+      "note": "7B, threads=4, decode median"
+    },
+    {
+      "id": "scale-7b-t8-prefill",
+      "value_text": "179.45",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[3].prefill_median",
+      "note": "7B, threads=8, prefill median"
+    },
+    {
+      "id": "scale-7b-t8-decode",
+      "value_text": "24.45",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[3].decode_median",
+      "note": "7B, threads=8, decode median -- decode peak for this model"
+    },
+    {
+      "id": "scale-7b-t16-prefill",
+      "value_text": "212.41",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[4].prefill_median",
+      "note": "7B, threads=16, prefill median"
+    },
+    {
+      "id": "scale-7b-t16-decode",
+      "value_text": "21.01",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[4].decode_median",
+      "note": "7B, threads=16, decode median"
+    },
+    {
+      "id": "scale-7b-t20-prefill",
+      "value_text": "218.39",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[5].prefill_median",
+      "note": "7B, threads=20, prefill median -- prefill peak for this model, and the box's default thread count"
+    },
+    {
+      "id": "scale-7b-t20-decode",
+      "value_text": "18.03",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_7b_thread_sweep[5].decode_median",
+      "note": "7B, threads=20, decode median"
+    },
+    {
+      "id": "scale-05b-t1-prefill",
+      "value_text": "318.95",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[0].prefill_median",
+      "note": "0.5B, threads=1, prefill median"
+    },
+    {
+      "id": "scale-05b-t1-decode",
+      "value_text": "85.41",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[0].decode_median",
+      "note": "0.5B, threads=1, decode median"
+    },
+    {
+      "id": "scale-05b-t2-prefill",
+      "value_text": "556.71",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[1].prefill_median",
+      "note": "0.5B, threads=2, prefill median"
+    },
+    {
+      "id": "scale-05b-t2-decode",
+      "value_text": "138.60",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[1].decode_median",
+      "note": "0.5B, threads=2, decode median"
+    },
+    {
+      "id": "scale-05b-t4-prefill",
+      "value_text": "915.65",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[2].prefill_median",
+      "note": "0.5B, threads=4, prefill median"
+    },
+    {
+      "id": "scale-05b-t4-decode",
+      "value_text": "177.61",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[2].decode_median",
+      "note": "0.5B, threads=4, decode median"
+    },
+    {
+      "id": "scale-05b-t8-prefill",
+      "value_text": "1457.68",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[3].prefill_median",
+      "note": "0.5B, threads=8, prefill median -- both phases peak for this model",
+      "aliases": [
+        "1,457.68"
+      ]
+    },
+    {
+      "id": "scale-05b-t8-decode",
+      "value_text": "190.32",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[3].decode_median",
+      "note": "0.5B, threads=8, decode median -- both phases peak for this model"
+    },
+    {
+      "id": "scale-05b-t16-prefill",
+      "value_text": "1047.66",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[4].prefill_median",
+      "note": "0.5B, threads=16, prefill median",
+      "aliases": [
+        "1,047.66"
+      ]
+    },
+    {
+      "id": "scale-05b-t16-decode",
+      "value_text": "120.05",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[4].decode_median",
+      "note": "0.5B, threads=16, decode median"
+    },
+    {
+      "id": "scale-05b-t20-prefill",
+      "value_text": "965.98",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[5].prefill_median",
+      "note": "0.5B, threads=20, prefill median -- the box's default thread count"
+    },
+    {
+      "id": "scale-05b-t20-decode",
+      "value_text": "45.49",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "A_05b_thread_sweep[5].decode_median",
+      "note": "0.5B, threads=20, decode median"
+    },
+    {
+      "id": "scale-finding3-05b-broken-prefill",
+      "value_text": "657.00",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[0].prefill_median",
+      "note": "0.5B, broken default KleidiAI build, default threads, prefill median"
+    },
+    {
+      "id": "scale-finding3-05b-broken-decode",
+      "value_text": "42.18",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[0].decode_median",
+      "note": "0.5B, broken default KleidiAI build, default threads, decode median"
+    },
+    {
+      "id": "scale-finding3-05b-fixed-prefill",
+      "value_text": "933.63",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[1].prefill_median",
+      "note": "0.5B, fixed KleidiAI build (GGML_NATIVE=OFF + explicit arch), default threads, prefill median"
+    },
+    {
+      "id": "scale-finding3-05b-fixed-decode",
+      "value_text": "41.70",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[1].decode_median",
+      "note": "0.5B, fixed KleidiAI build, default threads, decode median -- effectively unchanged vs the broken build's 42.18"
+    },
+    {
+      "id": "scale-finding3-7b-broken-prefill",
+      "value_text": "48.64",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[2].prefill_median",
+      "note": "7B, broken default KleidiAI build, default threads, prefill median"
+    },
+    {
+      "id": "scale-finding3-7b-broken-decode",
+      "value_text": "11.17",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[2].decode_median",
+      "note": "7B, broken default KleidiAI build, default threads, decode median"
+    },
+    {
+      "id": "scale-finding3-7b-fixed-prefill",
+      "value_text": "222.14",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[3].prefill_median",
+      "note": "7B, fixed KleidiAI build, default threads, prefill median"
+    },
+    {
+      "id": "scale-finding3-7b-fixed-decode",
+      "value_text": "18.45",
+      "source_file": "results/scale/scale-experiment.json",
+      "source_json_path": "B_finding3_cost[3].decode_median",
+      "note": "7B, fixed KleidiAI build, default threads, decode median"
+    },
+    {
+      "id": "scale-decode-collapse-05b",
+      "value_text": "4.56",
+      "source_file": "results/scale/scale-experiment.json",
+      "note": "0.5B decode thread-tuning win: peak (190.32, t=8) / default-threads fixed-build figure (41.70)",
+      "aliases": [
+        "4.56x",
+        "4.56×"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 190.32,
+        "denominator": 41.70
+      }
+    },
+    {
+      "id": "scale-decode-collapse-7b",
+      "value_text": "1.33",
+      "source_file": "results/scale/scale-experiment.json",
+      "note": "7B decode thread-tuning win: peak (24.45, t=8) / default-threads fixed-build figure (18.45) -- the same class of win as scale-decode-collapse-05b, collapsed by model size",
+      "aliases": [
+        "1.33x",
+        "1.33×"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 24.45,
+        "denominator": 18.45
+      }
+    },
+    {
+      "id": "scale-finding3-prefill-05b-ratio",
+      "value_text": "1.42",
+      "source_file": "results/scale/scale-experiment.json",
+      "note": "0.5B Finding 3 prefill cost: fixed (933.63) / broken (657.00)",
+      "aliases": [
+        "1.42x",
+        "1.42×"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 933.63,
+        "denominator": 657.00
+      }
+    },
+    {
+      "id": "scale-finding3-decode-05b-ratio",
+      "value_text": "0.99",
+      "source_file": "results/scale/scale-experiment.json",
+      "note": "0.5B Finding 3 decode cost: fixed (41.70) / broken (42.18) -- no effect at this model size",
+      "aliases": [
+        "0.99x",
+        "0.99×"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 41.70,
+        "denominator": 42.18
+      }
+    },
+    {
+      "id": "scale-finding3-prefill-7b-ratio",
+      "value_text": "4.57",
+      "source_file": "results/scale/scale-experiment.json",
+      "note": "7B Finding 3 prefill cost: fixed (222.14) / broken (48.64) -- the largest speedup this project has measured from fixing a single build defect",
+      "aliases": [
+        "4.57x",
+        "4.57×"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 222.14,
+        "denominator": 48.64
+      }
+    },
+    {
+      "id": "scale-finding3-decode-7b-ratio",
+      "value_text": "1.65",
+      "source_file": "results/scale/scale-experiment.json",
+      "note": "7B Finding 3 decode cost: fixed (18.45) / broken (11.17)",
+      "aliases": [
+        "1.65x",
+        "1.65×"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 18.45,
+        "denominator": 11.17
+      }
     }
   ]
 }
