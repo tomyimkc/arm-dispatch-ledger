@@ -1,0 +1,83 @@
+{
+ "schemaVersion": "polygraph.provenance.v1",
+ "measured": "2026-08-06",
+ "question": "Which local GGUF, if either, is a faithful conversion of the canonical upstream Qwen2.5-0.5B-Instruct weights?",
+ "method": "Range-fetched model.safetensors from https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct (the source weights repo, not the GGUF repo), parsed its header, extracted three F32 layer-norm tensors, converted BF16->F32, and compared element-by-element against the same tensors read directly out of each local GGUF. Layer-norm tensors are stored as F32 and are never touched by the Q4_0 quantizer, so they must be bit-identical between any two faithful conversions of the same checkpoint.",
+ "files": {
+  "A_local_baseline": {
+   "path_role": "A_local_baseline",
+   "sha256": "c8cd5f37dd1235fb010c45316d4ff8af875e1a4e0ff368b4bf6cacb9053d4919",
+   "bytes": 352972352,
+   "general.name": "Qwen2.5 0.5B Instruct",
+   "general.size_label": "0.5B",
+   "general.license": "apache-2.0",
+   "kv_pair_count": 38,
+   "tensor_count": 290
+  },
+  "B_manifest_hf_file": {
+   "path_role": "B_manifest_hf_file",
+   "sha256": "7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed",
+   "bytes": 428730208,
+   "general.name": "qwen2.5-0.5b-instruct",
+   "general.size_label": "630M",
+   "general.license": null,
+   "kv_pair_count": 26,
+   "tensor_count": 291
+  }
+ },
+ "comparison": {
+  "A_local_baseline": {
+   "blk.0.attn_norm.weight": {
+    "upstream_tensor": "model.layers.0.input_layernorm.weight",
+    "elements": 896,
+    "exact_matches": 896,
+    "max_abs_diff": 0.0
+   },
+   "blk.5.ffn_norm.weight": {
+    "upstream_tensor": "model.layers.5.post_attention_layernorm.weight",
+    "elements": 896,
+    "exact_matches": 896,
+    "max_abs_diff": 0.0
+   },
+   "blk.20.attn_norm.weight": {
+    "upstream_tensor": "model.layers.20.input_layernorm.weight",
+    "elements": 896,
+    "exact_matches": 896,
+    "max_abs_diff": 0.0
+   }
+  },
+  "B_manifest_hf_file": {
+   "blk.0.attn_norm.weight": {
+    "upstream_tensor": "model.layers.0.input_layernorm.weight",
+    "elements": 896,
+    "exact_matches": 0,
+    "max_abs_diff": 0.4805908203125
+   },
+   "blk.5.ffn_norm.weight": {
+    "upstream_tensor": "model.layers.5.post_attention_layernorm.weight",
+    "elements": 896,
+    "exact_matches": 0,
+    "max_abs_diff": 1.90478515625
+   },
+   "blk.20.attn_norm.weight": {
+    "upstream_tensor": "model.layers.20.input_layernorm.weight",
+    "elements": 896,
+    "exact_matches": 0,
+    "max_abs_diff": 4.2421875
+   }
+  }
+ },
+ "interpretation": {
+  "established": [
+   "The 352,972,352-byte local file (sha256 c8cd5f37...), which produced every committed Finding 1/2 measurement, is a BIT-EXACT conversion of the canonical upstream Qwen2.5-0.5B-Instruct weights: 896/896 elements match on all three layer-norm tensors checked, max absolute difference exactly 0.",
+   "The 428,730,208-byte file named by scripts/models.txt (sha256 7671c0c3..., the live Qwen2.5-0.5B-Instruct-GGUF blob) matches 0 of 2,688 checked elements against the same upstream tensors, diverging by up to 4.24.",
+   "Layer-norm tensors are F32 and are not quantized under file_type=2, so this difference cannot be a quantization artifact.",
+   "The Apache-2.0 attribution for the historical baseline is therefore sound on the strongest possible basis: the weights are demonstrably the upstream Qwen weights."
+  ],
+  "not_established": [
+   "The download URL the 353 MB baseline originally came from. It is identified here by content, not by origin. Content-addressed identity against upstream is stronger evidence than a URL would have been, but the provenance chain itself remains unrecorded.",
+   "Why the published Qwen2.5-0.5B-Instruct-GGUF q4_0 blob diverges from the upstream weights it is named for. That is an observation about a third-party artifact, not a claim about its cause. Note only that its own metadata self-reports general.size_label as shown above.",
+   "Whether the divergence would change any dispatch verdict. It would not have been detectable through this project's measurements either way, since all 10 verdicts reproduced across both files."
+  ]
+ }
+}

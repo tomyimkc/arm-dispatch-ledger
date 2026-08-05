@@ -246,3 +246,91 @@ were never the claim.
 `model_sha256` and `model_bytes` into every ledger it produces, so "which bytes did this
 measure" is answerable from the artifact alone. Per this repo's rules no existing results
 file was edited; this note is appended.
+
+---
+
+## Addendum 2026-08-06 (II) — a tensor-level check: same architecture/vocab/license, not confirmed same weights
+
+**Why this addendum, given the one above already disclosed the gap.** The addendum above
+already avoids claiming the two files hold identical weights ("whose original source is
+unrecorded"; "those were never the same file") — it needs no correction. This addendum exists
+because a later review pass proposed a stronger, specific claim not yet checked at the time
+the addendum above was written: that the two files are "the same … weights … differing only
+in how llama.cpp's Q4_0 quantizer was configured." That claim does not survive a direct
+tensor-value check and is recorded as false here so it is not repeated.
+
+**What was checked.** Both files' 290 shared tensors were parsed with `gguf-py` and compared
+by actual value, not just name/shape/type. 72 of 290 are byte-identical (`output_norm.weight`
+and almost all `attn_*.bias` tensors). The other 218 — including every one of the 24 blocks'
+`attn_norm.weight` and `ffn_norm.weight` tensors — differ. Those norm tensors are stored as
+plain F32 and are exempt from Q4_0 quantization (GGUF's `file_type=2` spec excludes 1D
+tensors) and are not touched by imatrix or tied/untied-output logic in llama.cpp's quantizer
+(`src/llama-quant.cpp`) or in Qwen2's own HF→GGUF converter — both leave an F32 tensor as an
+untouched byte copy when source and target type match. This session independently re-checked
+three of those tensors directly: `blk.0.attn_norm.weight`, `blk.5.ffn_norm.weight`, and
+`blk.23.attn_norm.weight` have correlations of 0.89, 0.95, and 0.91 respectively between the
+two files (not the ~1.0 identical floats would give), while `output_norm.weight` in the same
+two files is bit-identical (correlation 1.0) — confirming the parsing/comparison itself is
+sound, not a systematic bug. A broader pass across all 48 `attn_norm`/`ffn_norm` tensors
+(reported by the review that triggered this addendum, not independently re-run in full here)
+found correlations ranging 0.625–0.99 and a linear best fit (`b = m·a + c`) with R² as low as
+0.39 — well short of the ~1.0 a lossless rescale would produce.
+
+**What this does and does not establish.** Since no quantizer-configuration mechanism can
+explain a difference in tensors no quantizer touches, "same weights, different quantizer
+build" is not a supportable description of the relationship between the 352,972,352-byte file
+(sha `c8cd5f37…`) and the 428,730,208-byte HF file (sha `7671c0c3…`). What the two files do
+share, directly verified: identical architecture (`qwen2`, 24 blocks, `embedding_length` 896),
+byte-identical tokenizer/vocab (151,936 tokens, merges, token_type), and self-declared
+Apache-2.0 license metadata. Whether the 352,972,352-byte file is a different trained
+checkpoint of the same architecture, or something else, is **not established** here and
+remains open — its download provenance is still unrecorded (see the addendum above). Nothing
+here changes the corroboration-by-re-measurement finding above (the SME2 dispatch rule
+reproducing across both files): that result concerns which *kernel* the code dispatches to,
+not whether the two files hold identical trained parameters. Per this repo's rules no
+existing results file was edited; this note is appended.
+
+---
+
+## Addendum — 2026-08-06 (III): the baseline model is the faithful one. Earlier addenda understated this.
+
+Appended, not edited, per this page's append-only rule. This corrects the *emphasis* of addenda I
+and II, which described the historical baseline's provenance as an open gap without establishing
+what the file actually is.
+
+It has now been established, and the answer runs the other way.
+
+`model.safetensors` was range-fetched directly from `Qwen/Qwen2.5-0.5B-Instruct` — the source
+weights repository, not the GGUF one — its header parsed, and three F32 layer-norm tensors
+converted BF16→F32 and compared element by element against the same tensors read out of both local
+GGUF files. Layer norms are stored as F32 and are never touched by the Q4_0 quantizer, so any two
+faithful conversions of the same checkpoint must agree on them bit for bit.
+
+| | `blk.0.attn_norm` | `blk.5.ffn_norm` | `blk.20.attn_norm` |
+|---|---|---|---|
+| **353 MB baseline** (`c8cd5f37…`) — produced every Finding 1/2 measurement | **896/896 exact**, max diff **0** | **896/896 exact**, max diff **0** | **896/896 exact**, max diff **0** |
+| 428 MB file named by `scripts/models.txt` (`7671c0c3…`) | 0/896, max diff 0.48 | 0/896, max diff 1.90 | 0/896, max diff 4.24 |
+
+**The file this project measured against is a bit-exact conversion of the canonical upstream
+weights.** The file the manifest pointed at is not. The manifest was wrong in the direction
+opposite to the one addendum I implied.
+
+Two consequences worth stating plainly:
+
+- **The Apache-2.0 attribution is sound on the strongest available basis.** The weights are
+  demonstrably the upstream Qwen weights, not merely a file that claims to be.
+- **The measurements never needed re-running.** Addendum II left open whether the committed
+  Finding 1/2 numbers should be re-measured against a verifiable file. They were already taken
+  against the more faithful of the two.
+
+What remains genuinely unrecorded is the **download URL** the baseline came from. It is identified
+here by content, not by origin — which is the stronger of the two, but it is not the same as a
+provenance chain, and this page does not claim otherwise.
+
+Not established, and not claimed: why the published `Qwen2.5-0.5B-Instruct-GGUF` q4_0 blob
+diverges from the weights it is named for. That is an observation about a third-party artifact.
+Noted only, without inference: its own metadata self-reports `general.size_label = "630M"` for an
+architecture both files agree is 24 blocks at embedding length 896.
+
+Evidence, with the full method and every literal count:
+[`results/provenance/baseline-model-identity-2026-08-06.json`](provenance/baseline-model-identity-2026-08-06.json).

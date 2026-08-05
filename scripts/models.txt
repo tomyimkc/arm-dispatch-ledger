@@ -34,6 +34,22 @@
 # any other "license:other"/"license:unknown" tagged model) to this file.
 #
 # model_id|hf_repo|hf_file|sha256|license|notes
-qwen2.5-0.5b-q4_0|Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-instruct-q4_0.gguf|7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed|apache-2.0|Existing baseline (337 MB): every committed Finding 1/2 measurement in results/ was produced against this exact file. license verified live 2026-08-04 (cardData.license=apache-2.0).
+qwen2.5-0.5b-q4_0|Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-instruct-q4_0.gguf|7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed|apache-2.0|The real, live-fetchable file at this hf_repo/hf_file URL: 428,730,208 bytes, unchanged since the repo's 2024-09-20 upload. This sha256 verifies that download. It is NOT the file that produced the committed Finding 1/2 measurements in results/ -- that claim was wrong and is withdrawn. Those used a separate 352,972,352-byte file (sha256 c8cd5f37dd1235fb010c45316d4ff8af875e1a4e0ff368b4bf6cacb9053d4919, cached locally as q05.gguf), whose download origin is unrecorded. IMPORTANT, AND THE OPPOSITE OF WHAT THAT SOUNDS LIKE: a 2026-08-06 comparison against the canonical upstream weights (Qwen/Qwen2.5-0.5B-Instruct model.safetensors, range-fetched and BF16->F32 converted) found the 353 MB baseline is a BIT-EXACT conversion of them -- 896/896 elements match on three F32 layer-norm tensors, max difference 0 -- while THIS file matches 0 of 2,688 of the same elements, diverging by up to 4.24. Layer norms are F32 and untouched by the Q4_0 quantizer, so that is not a quantization artifact. The measurements were therefore taken against faithful upstream weights, identified by content rather than by URL. Evidence: results/provenance/baseline-model-identity-2026-08-06.json. license verified live 2026-08-04 (cardData.license=apache-2.0).
 qwen2.5-0.5b-q8_0|Qwen/Qwen2.5-0.5B-Instruct-GGUF|qwen2.5-0.5b-instruct-q8_0.gguf|ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e|apache-2.0|Same weights, Q8_0 quant (676 MB, real download + shasum verified 2026-08-04). KleidiAI's dispatch gate only ever selects an SME2/NEON matmul kernel for Q4_0 or Q8_0 tensors (see ggml/src/ggml-cpu/kleidiai/kleidiai.cpp) -- Q4_0-only evidence tells half that story. license verified live 2026-08-04 (cardData.license=apache-2.0), same repo/card as the Q4_0 file above.
 qwen2.5-1.5b-q4_0|Qwen/Qwen2.5-1.5B-Instruct-GGUF|qwen2.5-1.5b-instruct-q4_0.gguf|dcd819ff094852c38faba6873d8ff0c9d51eadb2844539e52042ae5d647bbfdb|apache-2.0|Larger Apache-2.0 model (1.07 GB, real download + shasum verified 2026-08-04), same Qwen2.5-Instruct family/tokenizer as the 0.5B rows above so dispatch/throughput results stay comparable across the size axis. Qwen2.5-3B-Instruct-GGUF was considered and REJECTED (license:other, non-commercial -- see header note); 1.5B is the largest same-family GGUF confirmed apache-2.0 as of 2026-08-04.
+#
+# NOT A ROW HERE, ON PURPOSE: the local file that actually produced every committed Finding 1/2
+# measurement in results/ -- 352,972,352 bytes, sha256
+# c8cd5f37dd1235fb010c45316d4ff8af875e1a4e0ff368b4bf6cacb9053d4919, cached as q05.gguf.
+#
+# It gets no row because every row here is a fetchable (hf_repo, hf_file, sha256) triple that
+# scripts/lib/fetch_model.sh can download and verify, and this file's origin URL is unknown. Giving
+# it a row would make CI attempt a download that cannot succeed.
+#
+# What IS established about it, and it matters: it is a bit-exact conversion of the canonical
+# upstream Qwen2.5-0.5B-Instruct weights. Verified 2026-08-06 by range-fetching model.safetensors
+# from the source weights repo and comparing three F32 layer-norm tensors element by element --
+# 896/896 exact, max difference 0. The published Qwen2.5-0.5B-Instruct-GGUF q4_0 blob named in the
+# row above matches 0 of those same 2,688 elements. So the historical baseline is the faithful
+# artifact of the two, and the Apache-2.0 attribution rests on the weights themselves rather than
+# on a download record. See results/provenance/baseline-model-identity-2026-08-06.json.

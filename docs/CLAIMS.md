@@ -1355,3 +1355,18 @@ code mechanism on hardware where it builds, not the original reporter's environm
 adjudicate whether the buffer-type ordering is intentional. The mechanism was diagnosed upstream
 by `izard` in ggml-org/llama.cpp#26334; the contribution here is the measured reproduction, not
 the diagnosis.
+
+### Baseline model identity, 2026-08-06 (`results/provenance/baseline-model-identity-2026-08-06.json`)
+
+| claim | value | source |
+|---|---|---|
+| baseline file size | 352,972,352 bytes | `files.A_local_baseline.bytes` |
+| baseline sha256 | `c8cd5f37…` | `files.A_local_baseline.sha256` |
+| manifest HF file size | 428,730,208 bytes | `files.B_manifest_hf_file.bytes` |
+| baseline vs upstream, per tensor | **896/896 exact**, max diff **0** (x3 tensors) | `comparison.A_local_baseline` |
+| HF file vs upstream, per tensor | 0/896 exact; max diff 0.48 / 1.90 / 4.24 | `comparison.B_manifest_hf_file` |
+
+**What this does NOT establish.** The baseline's download URL remains unrecorded — it is identified
+by content, not origin. No claim is made about *why* the published GGUF blob diverges from the
+weights it is named for; that is an observation about a third-party artifact. Three layer-norm
+tensors were checked, not all 290.

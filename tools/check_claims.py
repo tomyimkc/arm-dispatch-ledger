@@ -720,6 +720,113 @@ def check_live_claims(
 
 
 # --------------------------------------------------------------------------------------
+# Check 4 -- manifest hash/byte-size consistency
+#
+# Origin: the 2026-08-06 model-manifest provenance incident, where scripts/models.txt
+# paired one file's real sha256 with a different file's byte size and historical role.
+# This check is narrow and deliberately conservative -- it does NOT try to police every
+# size mention in prose (docs/CLAIMS.md already documents that file sizes are out of
+# scope for check 2/3, and rightly so: "337 MB" vs "336.66 MiB" is a legitimate rounding
+# choice, not a defect). It only catches the one thing that IS unambiguous: an exact,
+# comma-grouped byte count stated close to a specific sha256 in scripts/models.txt, where
+# a committed results/**/*.json ledger (written by tools/verify_dispatch.py, which embeds
+# model_sha256 + model_bytes since the same incident) records a *different* byte count
+# for that same hash.
+# --------------------------------------------------------------------------------------
+
+MANIFEST_PATH = "scripts/models.txt"
+HASH_RE = re.compile(r"\b[0-9a-f]{64}\b")
+EXACT_BYTE_COUNT_RE = re.compile(r"\b(\d{1,3}(?:,\d{3})+)\s*-?\s*bytes?\b")
+# A hash/byte-count pair is only trusted when they sit within this many characters of
+# each other AND are each other's nearest match -- see tools/check_claims.py's own test
+# invocation (or the incident writeup) for why: on the real manifest text, genuine
+# same-sentence pairings land under ~150 chars apart, while unrelated hash/byte-count
+# mentions elsewhere in the same file land at 400+ chars -- a wide, safe margin.
+MANIFEST_PAIR_MAX_DISTANCE = 150
+
+
+def collect_manifest_hash_byte_claims(root: Path) -> dict:
+    """{sha256: (byte_count, line_no)} for unambiguous hash/byte-count pairs found in
+    scripts/models.txt. A pair is trusted only when the hash and the byte count are
+    mutual nearest neighbors (by character offset) within MANIFEST_PAIR_MAX_DISTANCE --
+    this deliberately drops any hash or byte count that has no close, unambiguous
+    partner (e.g. a row whose notes only give an approximate "(676 MB)" size) rather
+    than guess.
+    """
+    path = root / MANIFEST_PATH
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    hashes = [(m.start(), m.group(0)) for m in HASH_RE.finditer(text)]
+    counts = [(m.start(), int(m.group(1).replace(",", ""))) for m in EXACT_BYTE_COUNT_RE.finditer(text)]
+    if not hashes or not counts:
+        return {}
+
+    claims: dict = {}
+    for hpos, h in hashes:
+        bpos, n = min(counts, key=lambda c: abs(c[0] - hpos))
+        if abs(bpos - hpos) > MANIFEST_PAIR_MAX_DISTANCE:
+            continue
+        # Mutual-nearest check: this byte count's own nearest hash must be this hash,
+        # otherwise it belongs to some other mention and pairing it here would guess.
+        nearest_hash_pos, _ = min(hashes, key=lambda hh: abs(hh[0] - bpos))
+        if nearest_hash_pos != hpos:
+            continue
+        line_no = text.count("\n", 0, hpos) + 1
+        claims[h] = (n, line_no)
+    return claims
+
+
+def collect_ledger_hash_bytes(root: Path) -> dict:
+    """{sha256: (byte_count, rel_path)} from every committed results/**/*.json object
+    that carries both model_sha256 and model_bytes (only ledgers written since the
+    2026-08-06 fix to tools/verify_dispatch.py have these keys; older ledgers are
+    silently skipped, not treated as a contradiction).
+    """
+    out: dict = {}
+    for jf in sorted((root / "results").rglob("*.json")):
+        try:
+            data = json.loads(jf.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("model_sha256"), str) and isinstance(
+            data.get("model_bytes"), int
+        ):
+            out[data["model_sha256"]] = (data["model_bytes"], str(jf.relative_to(root)))
+    return out
+
+
+def check_manifest_hash_byte_consistency(root: Path, verbose: bool) -> list:
+    findings: list = []
+    manifest_claims = collect_manifest_hash_byte_claims(root)
+    ledger_truth = collect_ledger_hash_bytes(root)
+    for h, (claimed_bytes, line_no) in sorted(manifest_claims.items(), key=lambda kv: kv[1][1]):
+        if h not in ledger_truth:
+            if verbose:
+                print(f"  [no ledger evidence] {MANIFEST_PATH}:{line_no} sha256 {h[:12]}... "
+                      f"claimed {claimed_bytes:,} bytes (nothing committed under results/ to check against)")
+            continue
+        real_bytes, ledger_file = ledger_truth[h]
+        if real_bytes == claimed_bytes:
+            if verbose:
+                print(f"  [consistent] {MANIFEST_PATH}:{line_no} sha256 {h[:12]}... "
+                      f"{claimed_bytes:,} bytes matches {ledger_file}")
+            continue
+        findings.append(
+            Finding(
+                "manifest-hash-byte-mismatch",
+                MANIFEST_PATH,
+                line_no,
+                f"sha256 {h} stated as {claimed_bytes:,} bytes",
+                f"{ledger_file} independently records the same sha256 as {real_bytes:,} bytes -- "
+                "a manifest claim contradicts committed measurement evidence for its own hash "
+                "(this is the exact defect class the 2026-08-06 model-manifest incident found).",
+            )
+        )
+    return findings
+
+
+# --------------------------------------------------------------------------------------
 # Report + main
 # --------------------------------------------------------------------------------------
 
@@ -775,6 +882,11 @@ def main(argv: Optional[list] = None) -> int:
         root, registry, claims_index, json_numbers, retracted_mentions, args.verbose
     )
     all_findings.extend(live_findings)
+
+    if args.verbose:
+        print("\n== Check 4: manifest hash/byte-size consistency ==")
+    manifest_findings = check_manifest_hash_byte_consistency(root, args.verbose)
+    all_findings.extend(manifest_findings)
 
     if all_findings:
         print_report(all_findings)

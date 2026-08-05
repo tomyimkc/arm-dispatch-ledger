@@ -6,3 +6,4 @@
 1785796016	verify_dispatch	OK	wrote /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/dispatch-ledger-Darwin-arm64.json (log: /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/logs/verify_dispatch.log)
 1785796083	run_bench	OK	bench completed, results in /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/bench (log: /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/logs/run_bench.log)
 1785796084	emit_ledger	OK	wrote fallback ledger to /Users/tom/Documents/GitHub/arm-dispatch-ledger/results/LEDGER.md
+1785954870	fetch_model	OK	/var/folders/4h/nzfg6lh153s9c_728t7j63jm0000gn/T//polygraph-cache/models/qwen2.5-0.5b-instruct-q4_0.gguf
