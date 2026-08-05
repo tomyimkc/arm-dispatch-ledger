@@ -19,5 +19,9 @@ applies to `results/`.
 
 | file | status | filed as |
 |---|---|---|
-| `finding3-*` | **not yet filed** | — |
-| (Finding 1/2, see `docs/UPSTREAM-ISSUE.md`) | filed | ggml-org/llama.cpp#26547 |
+| `finding3-*` | **filed 2026-08-05** | [ggml-org/llama.cpp#26630](https://github.com/ggml-org/llama.cpp/issues/26630) |
+| (Finding 1/2, see `docs/UPSTREAM-ISSUE.md`) | filed 2026-08-04 | [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547) |
+
+**`finding3-title.txt` and `finding3-body.md` are now frozen.** They are the record of what was
+actually sent to #26630. Corrections go in a comment on that issue, never in these files — the
+same rule this repo applies to `results/`.

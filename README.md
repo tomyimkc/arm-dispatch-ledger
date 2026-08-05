@@ -922,11 +922,11 @@ whose remaining numbers you can spend less time second-guessing.
   CI lane meant to produce this automatically still has not completed a clean run (a separate,
   unresolved OOM incident on that runner) — this confirmation stands on its own measurement, not on
   that lane going green.
-- **Finding 3 (the broken default KleidiAI build on the DGX Spark) has not been reported
-  upstream.** Unlike Findings 1 and 2 (filed as
-  [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)), the build-flag
-  issue diagnosed here is new as of this session and has not yet been written up as a separate
-  upstream issue or doc fix.
+- **Both upstream reports are filed and awaiting a maintainer.** Findings 1 and 2 are
+  [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547) (2026-08-04);
+  Finding 3, the broken default KleidiAI build, is [#26630](https://github.com/ggml-org/llama.cpp/issues/26630) (2026-08-05). Neither has a
+  response yet. Nothing here should be read as upstream having accepted, confirmed or agreed with
+  any of it.
 - **The Cloud AI server sweep (`results/server/server-bench.json`) is single-machine,
   single-model.** All five rows use `Qwen2.5-0.5B-Instruct-Q4_0` on one DGX Spark, built with the
   Finding 3 fix; TTFT and throughput at a larger model, a larger batch size, or another quantization

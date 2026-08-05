@@ -51,7 +51,7 @@ against their own binary.
 |---|---:|---|
 | Technological Implementation | 40 | The L1/L2/L3 method, the fail-closed exit-code contract, the ground-truth harnesses, the claims-registry CI gate, cross-platform gdb/lldb, the target system, the two upstream patches |
 | "WOW" factor | 25 | The build-defect finding (banner lies, 0 working kernels, 4.57x cost) and the second wow: we re-ran our own method on our own headline number and published that it shrank |
-| Potential Impact | 20 | Filed upstream (#26547) + a drafted second report, a reusable CI pattern, and an honest statement of exactly who this affects (and who it doesn't) |
+| Potential Impact | 20 | Two reports filed upstream (#26547, #26630), an independently-reported defect reproduced and measured, a one-line CI gate any project can adopt, and an honest statement of exactly who this affects (and who it doesn't) |
 | User Experience / Developer Experience | 15 | One command, stdlib-only, JSON output, graceful degradation, a documented exit-code contract that never silently reports success |
 
 ---
@@ -199,15 +199,47 @@ anything, including its own project.
 
 ## Potential Impact — 20 points
 
-### Filed upstream, plus a second report ready to go
+### We reproduced someone else's bug report, and measured what nobody had measured
+
+The finding with the widest reach is not one of ours. `izard` reported
+[ggml-org/llama.cpp#26334](https://github.com/ggml-org/llama.cpp/issues/26334): build with both
+`-DGGML_CPU_KLEIDIAI=ON` and `-DGGML_CUDA=ON`, run CPU-only with `-ngl 0`, and KleidiAI is silently
+bypassed. They diagnosed the cause by reading the source. A contributor confirmed two CLI
+workarounds and the issue was closed the next day. **Nobody ever measured it.**
+
+We did. Same binary, same model, three arms, five round-robin-interleaved reps each:
+
+| arm | KleidiAI kernels that actually ran |
+|---|---|
+| default `-ngl 0` | **0** |
+| `--no-host` | **7,968** |
+| `-dev none` | **7,968** |
+
+The `KLEIDIAI = 1` banner, the `kleidiai: primary q4/q8 kernel feature I8MM` selection line, and
+the `nm` symbol count (10/149) are **byte-identical across all three arms**. Every signal a user
+can check says the same thing in the broken run as in the working one. Only counting execution
+separates them — which is the entire argument for why L3 exists, demonstrated on a defect we did
+not author.
+
+This matters more than our own headline finding. Finding 3 needs three simultaneous non-default
+conditions including a compiler older than the CPU. This needs two build flags people deliberately
+combine and the normal way to ask for CPU inference — the obvious build on any machine with an Arm
+CPU next to an NVIDIA GPU. Write-up and the 15-run evidence:
+[`results/upstream/FINDING-4-CUDA-HOST-BUFFER.md`](../results/upstream/FINDING-4-CUDA-HOST-BUFFER.md).
+
+**We did not comment on #26334.** It is closed, the reporter's need was met, and a tool-branded
+evidence dump on a resolved thread would be self-promotion, not contribution. The measurement lives
+in our repo where it costs the maintainers nothing.
+
+### Filed upstream: two reports, both open
 
 Both original findings (the SME2 thread-cap gate and the SVE exact-width gate) were filed as
 [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547) on 2026-08-04, with
 reproduction commands, exact source-line citations, and an offer to send the patch. The newer
-build-defect finding (Finding 3, the zero-kernel KleidiAI build) is drafted and ready to file —
-`docs/issues/finding3-title.txt` and `docs/issues/finding3-body.md` — but has **not yet been
-submitted** as its own issue; we say so plainly rather than implying it's already in the
-maintainers' queue.
+build-defect finding (Finding 3, the zero-kernel KleidiAI build) was filed separately on
+2026-08-05 as [ggml-org/llama.cpp#26630](https://github.com/ggml-org/llama.cpp/issues/26630), with the same discipline: reproduction commands,
+exact source-line citations, three graduated fix proposals, and an explicit scope section stating
+what was *not* tested (other compilers, other Arm cores, other distributions, cross-compilation).
 
 ### A CI pattern any project can adopt, not just this one
 
@@ -430,9 +462,10 @@ against.
   throughput/TTFT/memory numbers and the dispatch-under-load capture are specific to `llama.cpp`'s
   own server; nothing here measures or claims anything about other inference servers. (`vLLM`'s Arm
   CPU path doesn't share the KleidiAI mechanism at all — see `docs/PRODUCT.md`.)
-- **Finding 3 has not yet been filed upstream.** It is drafted and ready
-  (`docs/issues/finding3-title.txt`, `docs/issues/finding3-body.md`) but, unlike Findings 1 and 2
-  (`ggml-org/llama.cpp#26547`), has not been submitted as its own issue as of this submission.
+- **Both upstream reports are open and unanswered.** Findings 1 and 2 are
+  [`ggml-org/llama.cpp#26547`](https://github.com/ggml-org/llama.cpp/issues/26547) (2026-08-04);
+  Finding 3 is [`#26630`](https://github.com/ggml-org/llama.cpp/issues/26630) (2026-08-05). Neither has a maintainer response yet, and we are
+  not claiming upstream agreement — only that the reports are filed, dated and public.
 - **The Finding 3 defect does not affect stock releases.** The official `llama.cpp` release
   (`b10276`) ships `GGML_CPU_KLEIDIAI` off by default and is not broken by this defect; the exposed
   population is people manually building with `-DGGML_CPU_KLEIDIAI=ON` on a native build against a

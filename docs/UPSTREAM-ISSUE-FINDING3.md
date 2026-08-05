@@ -1,5 +1,8 @@
 # Upstream issue draft for ggml-org/llama.cpp — Finding 3
 
+> **Filed 2026-08-05 as [ggml-org/llama.cpp#26630](https://github.com/ggml-org/llama.cpp/issues/26630).** The text below this banner is the report as sent, and is frozen; corrections belong in a comment on the issue.
+
+
 Status: **DRAFT — not filed.** This file is prepared for the repository owner to post manually to
 `ggml-org/llama.cpp`; nothing below has been submitted. It is a separate, previously-unreported
 defect from [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547) (filed
