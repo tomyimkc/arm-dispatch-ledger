@@ -577,7 +577,9 @@ failure — the fix for both had to be found by hand, not by following the docs 
 
 ### FIELD: What's next
 
-File the drafted Finding 3 report upstream (it's written, just not submitted yet). Extend the CLI's
+Both upstream reports are now filed ([#26547](https://github.com/ggml-org/llama.cpp/issues/26547),
+[#26630](https://github.com/ggml-org/llama.cpp/issues/26630)) and the next step there is simply to
+answer whatever the maintainers ask. Extend the CLI's
 ad-hoc mode to a couple of other Arm-accelerated projects beyond `llama.cpp`, to prove the target
 system really does generalize rather than just claiming it does. Get the automated SVE2
 confirmation lane green once the unrelated Spark runner incident is resolved, so that result stops

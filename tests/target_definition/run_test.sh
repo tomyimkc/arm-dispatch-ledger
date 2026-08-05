@@ -177,5 +177,5 @@ if failures:
 
 print("PASS: tools/polygraph's declarative target pipeline (L1/L2/L3/verdict/exit-code) "
       "recovered exact ground truth for both a MATCH and a SILENT_FALLBACK scenario, "
-      "and all 6 shipped presets under tools/targets/*.json are valid and `explain`-able.")
+      f"and all {len(preset_names)} shipped presets under tools/targets/*.json are valid and `explain`-able.")
 PY

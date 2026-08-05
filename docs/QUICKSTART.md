@@ -5,16 +5,15 @@ fallback, then point it at your own binary.
 
 ## Status (2026-08-05)
 
-`examples/catch-a-liar/` and this guide are built against the CLI contract (`tools/polygraph
-list|check|explain`, documented in full below). `tools/polygraph` itself is a separate,
-concurrent work package for this same submission and may not exist yet in the checkout you're
-reading this from. `make demo` tells you plainly which state you're in:
+`tools/polygraph`, `examples/catch-a-liar/` and this guide all ship in the repository — nothing
+below is aspirational, and every command here was run from a fresh clone before this page was
+written. `make demo` tells you plainly which state you're in:
 
-- **`tools/polygraph` present** — the full demo runs end to end; the exit codes and verdicts
-  below are real, produced by that run.
-- **`tools/polygraph` missing** — the script still compiles both real binaries (so you can see
-  they behave identically at the banner line), then stops and prints the exact `polygraph check`
-  commands to re-run once the tool lands, exiting `2`.
+- **`tools/polygraph` present** (the normal case) — the full demo runs end to end; the exit codes
+  and verdicts below are real, produced by that run.
+- **A debugger is missing** — the demo still runs L1 and L2, reports `level_reached: 2/3`, and
+  exits `2` (undetermined) rather than pretending the check passed.
+
 
 ## 2-minute demo
 

@@ -1625,6 +1625,19 @@ def main(argv=None) -> int:
     }
 
     out_path = args.out or os.path.join(REPO_ROOT, "results", f"dispatch-ledger-{platform_meta['platform']}.json")
+    # Guard against silently destroying committed evidence. This default path points at a
+    # tracked file under results/, so *any* casual run -- including someone poking at the
+    # tool with a throwaway binary -- used to overwrite a real, dated measurement with
+    # whatever it just produced. That happened: a run against /bin/ls replaced the
+    # 2026-08-03 Apple M4 Max ledger, and only the claims gate caught it. results/ is an
+    # append-only evidence record in this project, so refuse rather than clobber; an
+    # explicit --out is the way to say you meant it.
+    if not args.out and os.path.exists(out_path):
+        print(f"\nERROR: refusing to overwrite existing evidence at {out_path}", file=sys.stderr)
+        print("       results/ is an append-only record in this project. Pass an explicit "
+              "--out PATH (e.g. --out /tmp/ledger.json) to write elsewhere, or --out with "
+              "this same path if you genuinely intend to replace it.", file=sys.stderr)
+        return 2
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as fh:
         json.dump(ledger, fh, indent=2, sort_keys=False)

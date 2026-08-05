@@ -50,6 +50,7 @@ import glob
 import json
 import os
 import platform
+import re
 import shlex
 import sys
 
@@ -306,7 +307,26 @@ def cmd_check(args) -> int:
                 print(f"       see `polygraph explain {args.target}` for what this target expects.",
                       file=sys.stderr)
                 return 2
+        if args.dispatch_regex:
+            # This flag is documented as "override the target's own L1/L3 symbol regex",
+            # but it was only ever read in the ad-hoc branch -- so on the named-target
+            # path it was accepted and silently ignored. That is precisely the
+            # advertised-vs-executed gap this tool exists to catch, in the tool itself.
+            for layer in ("l1", "l3"):
+                if isinstance(target.get(layer), dict):
+                    target[layer]["dispatch_regex"] = args.dispatch_regex
+            log(args, f"# dispatch regex overridden for L1/L3: {args.dispatch_regex}")
         raw_run_cmd = None
+
+    # Validate the regex before anything expensive runs, so a typo gets a one-line message
+    # naming the flag rather than a re module traceback from three frames down.
+    for flag, pattern in (("--symbols", args.symbols), ("--dispatch-regex", args.dispatch_regex)):
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                print(f"ERROR: {flag} is not a valid regular expression: {e}", file=sys.stderr)
+                return 2
 
     params = {}
     if args.model:
@@ -325,6 +345,11 @@ def cmd_check(args) -> int:
 
     if not os.path.isfile(args.binary):
         print(f"ERROR: --binary not found: {args.binary}", file=sys.stderr)
+        return 2
+    if not os.access(args.binary, os.X_OK):
+        print(f"ERROR: --binary is not executable: {args.binary}", file=sys.stderr)
+        print("       L1 can read a non-executable library, but L2/L3 must run the program. "
+              "Pass the executable, or use --level 1.", file=sys.stderr)
         return 2
 
     log(args, f"# polygraph check {target.get('name', 'adhoc')} -- {vd.platform_id()} / {vd.detect_cpu_brand()}")
@@ -400,7 +425,24 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except KeyboardInterrupt:
+        print("\nERROR: interrupted", file=sys.stderr)
+        return 2
+    except Exception as e:                                    # noqa: BLE001
+        # The exit-code contract is the whole product: 0 means the advertised path really
+        # ran. An uncaught exception must therefore never reach the shell, because a
+        # traceback exits 1 -- which this tool defines as "mismatch found", a confident
+        # wrong answer. Anything unexpected is exit 2, undetermined. Fail closed.
+        print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+        print("       polygraph could not complete this check, so no verdict is reported "
+              "(exit 2 = undetermined). Re-run with POLYGRAPH_TRACEBACK=1 for the full "
+              "traceback.", file=sys.stderr)
+        if os.environ.get("POLYGRAPH_TRACEBACK"):
+            import traceback
+            traceback.print_exc()
+        return 2
 
 
 if __name__ == "__main__":

@@ -210,11 +210,16 @@ runs:
         POLYGRAPH_RUN: ${{ inputs.run }}
         POLYGRAPH_LEVEL: ${{ inputs.level }}
       run: |
-        set -uo pipefail   # deliberately NOT -e: this step must always reach
-                             # its own `exit "$tool_exit"` at the bottom so
-                             # outputs are written before continue-on-error
-                             # decides whether the composite as a whole fails
-                             # (see the "Enforce result" step).
+        # GitHub runs a composite `shell: bash` step as `bash -e {0}`, so errexit is
+        # ON by default and `set -uo pipefail` does NOT clear it. Without the explicit
+        # `set +e` below, tools/polygraph's contractual exit 1 (mismatch) killed this
+        # script at the invocation line -- before it could write verdict/level-reached/
+        # json-path or the Step Summary. The Action then failed with no explanation,
+        # which is the exact opposite of the graceful degradation it advertises.
+        set +e
+        set -uo pipefail   # this step must always reach its own `exit "$tool_exit"`
+                           # at the bottom so outputs are written before the
+                           # "Enforce result" step decides the composite's fate.
         if [[ "$POLYGRAPH_FOUND" != "true" ]]; then
           echo "::error::polygraph-check: tools/polygraph not available — see the 'Locate tools/polygraph' step above. This is an environment/integration problem, not a verdict." >&2
           {
