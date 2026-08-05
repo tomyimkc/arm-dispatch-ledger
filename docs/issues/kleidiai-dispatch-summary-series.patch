@@ -1,0 +1,349 @@
+diff --git a/docs/build.md b/docs/build.md
+index ca086a0be..6eda074af 100644
+--- a/docs/build.md
++++ b/docs/build.md
+@@ -631,6 +631,14 @@ The environment variable GGML_KLEIDIAI_SME can be used to control SME behavior:
+ - <n> > 0: enable SME and assume <n> available SME units (override auto detection).
+ If SME is not supported by the CPU, SME microkernels are always disabled.
+ 
++Note that the buffer-size line and the kernel-selection log report what was selected, not what ran. To see how many KleidiAI micro-kernels actually executed, set GGML_KLEIDIAI_SUMMARY=1 and run with `--verbose`; a per-kernel-family execution summary is printed at process exit:
++```
++kleidiai: dispatch summary: selected q4=SME2 q8=SME2 f32=SME2
++kleidiai: dispatch summary: executed qx_gemv/SME2=3069
++kleidiai: dispatch summary: executed total=5952
++```
++An `executed total=0` under a non-`none` selected line means the selected kernels never ran (for example, when the model's weights were placed in a different buffer type).
++
+ Depending on your build target, other higher priority backends may be enabled by default. To ensure the CPU backend is used, you must disable the higher priority backends either at compile time, e.g. -DGGML_METAL=OFF, or during run-time using the command line option `--device none`.
+ 
+ ## OpenCL
+diff --git a/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp b/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
+index c1cc33db2..388913327 100644
+--- a/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
++++ b/ggml/src/ggml-cpu/kleidiai/kleidiai.cpp
+@@ -92,6 +92,83 @@ static const char* cpu_feature_to_string(cpu_feature f) {
+     }
+ }
+ 
++// Dispatch counters: how many times a KleidiAI micro-kernel actually ran, by op path
++// and kernel family. The init-time selection log ("primary ... kernel feature ...")
++// reports what was chosen; these report what executed — the two can differ (e.g. a
++// weight placed in a non-KleidiAI buffer type never reaches these kernels at all).
++// Counting is always on (one relaxed atomic add per micro-kernel invocation); the
++// summary is printed at process exit only when GGML_KLEIDIAI_SUMMARY=1.
++enum kleidiai_dispatch_path {
++    KLEIDIAI_DISPATCH_PATH_F32 = 0,
++    KLEIDIAI_DISPATCH_PATH_FP16,
++    KLEIDIAI_DISPATCH_PATH_QX_GEMM,
++    KLEIDIAI_DISPATCH_PATH_QX_GEMV,
++    KLEIDIAI_DISPATCH_PATH_COUNT,
++};
++
++static const int KLEIDIAI_DISPATCH_FAMILY_COUNT = 6;
++
++static const char * kleidiai_dispatch_path_names[KLEIDIAI_DISPATCH_PATH_COUNT] = {
++    "f32", "fp16", "qx_gemm", "qx_gemv",
++};
++
++static const char * kleidiai_dispatch_family_names[KLEIDIAI_DISPATCH_FAMILY_COUNT] = {
++    "SME2", "SME", "SVE", "I8MM", "DOTPROD", "OTHER",
++};
++
++static std::atomic<uint64_t> kleidiai_dispatch_counts[KLEIDIAI_DISPATCH_PATH_COUNT][KLEIDIAI_DISPATCH_FAMILY_COUNT] = {};
++
++static int kleidiai_dispatch_family_index(cpu_feature f) {
++    // Mirrors cpu_feature_to_string's precedence.
++    if ((f & CPU_FEATURE_SME2) == CPU_FEATURE_SME2) {
++        return 0;
++    } else if ((f & CPU_FEATURE_SME) == CPU_FEATURE_SME) {
++        return 1;
++    } else if ((f & CPU_FEATURE_SVE) == CPU_FEATURE_SVE) {
++        return 2;
++    } else if ((f & CPU_FEATURE_I8MM) == CPU_FEATURE_I8MM) {
++        return 3;
++    } else if ((f & CPU_FEATURE_DOTPROD) == CPU_FEATURE_DOTPROD) {
++        return 4;
++    }
++    return 5;
++}
++
++static inline void kleidiai_dispatch_count_add(kleidiai_dispatch_path path, cpu_feature f) {
++    kleidiai_dispatch_counts[path][kleidiai_dispatch_family_index(f)].fetch_add(1, std::memory_order_relaxed);
++}
++
++static void kleidiai_print_dispatch_summary(void) {
++    GGML_LOG_INFO("kleidiai: dispatch summary: selected q4=%s q8=%s f32=%s\n",
++                  ctx.kernels_q4  ? cpu_feature_to_string(ctx.kernels_q4->required_cpu)  : "none",
++                  ctx.kernels_q8  ? cpu_feature_to_string(ctx.kernels_q8->required_cpu)  : "none",
++                  ctx.kernels_f32 ? cpu_feature_to_string(ctx.kernels_f32->required_cpu) : "none");
++
++    uint64_t total = 0;
++    for (int p = 0; p < KLEIDIAI_DISPATCH_PATH_COUNT; ++p) {
++        for (int f = 0; f < KLEIDIAI_DISPATCH_FAMILY_COUNT; ++f) {
++            const uint64_t n = kleidiai_dispatch_counts[p][f].load(std::memory_order_relaxed);
++            if (n > 0) {
++                GGML_LOG_INFO("kleidiai: dispatch summary: executed %s/%s=%llu\n",
++                              kleidiai_dispatch_path_names[p], kleidiai_dispatch_family_names[f],
++                              (unsigned long long) n);
++            }
++            total += n;
++        }
++    }
++    GGML_LOG_INFO("kleidiai: dispatch summary: executed total=%llu\n", (unsigned long long) total);
++}
++
++uint64_t ggml_backend_cpu_kleidiai_dispatch_total(void) {
++    uint64_t total = 0;
++    for (int p = 0; p < KLEIDIAI_DISPATCH_PATH_COUNT; ++p) {
++        for (int f = 0; f < KLEIDIAI_DISPATCH_FAMILY_COUNT; ++f) {
++            total += kleidiai_dispatch_counts[p][f].load(std::memory_order_relaxed);
++        }
++    }
++    return total;
++}
++
+ #if defined(__linux__) && defined(__aarch64__)
+ static bool parse_cpu_dir_name(const char* name, size_t* cpu) {
+     if (strncmp(name, "cpu", 3) != 0 ||
+@@ -309,6 +386,7 @@ static void init_kleidiai_context(void) {
+         const char *env_sme         = getenv("GGML_KLEIDIAI_SME");
+         const char *env_threads     = getenv("GGML_TOTAL_THREADS");
+         const char *env_chunk_mult  = getenv("GGML_KLEIDIAI_CHUNK_MULTIPLIER");
++        const char *env_summary     = getenv("GGML_KLEIDIAI_SUMMARY");
+ 
+         auto runtime_feat = ggml_get_aarch64_runtime_features();
+ 
+@@ -334,6 +412,14 @@ static void init_kleidiai_context(void) {
+             }
+         }
+ 
++        if (env_summary) {
++            bool ok = false;
++            int v = parse_uint_env(env_summary, "GGML_KLEIDIAI_SUMMARY", &ok);
++            if (ok && v > 0) {
++                atexit(kleidiai_print_dispatch_summary);
++            }
++        }
++
+         int sme_cores = 0;
+         bool sme_env_ok = false;
+         bool sme_env_set = (env_sme != nullptr);
+@@ -919,6 +1005,8 @@ class tensor_traits : public ggml::cpu::tensor_traits {
+                                           sizeof(float),
+                                           -FLT_MAX,
+                                           FLT_MAX);
++
++                    kleidiai_dispatch_count_add(KLEIDIAI_DISPATCH_PATH_F32, kernels->required_cpu);
+                 }
+ 
+                 current_col = ggml_threadpool_chunk_add(params->threadpool, (int) chunk_cols);
+@@ -1072,6 +1160,8 @@ class tensor_traits : public ggml::cpu::tensor_traits {
+                     float * dst_ptr      = reinterpret_cast<float *>(dst_batch_base + dst_offset);
+ 
+                     kernel->run_kernel_ex(m, n_to_process, k, 0, lhs_ptr, rhs_ptr, dst_ptr, dst_stride, sizeof(float), -FLT_MAX, FLT_MAX);
++
++                    kleidiai_dispatch_count_add(KLEIDIAI_DISPATCH_PATH_FP16, kernels->required_cpu);
+                 }
+             }
+ 
+@@ -1368,6 +1458,9 @@ class tensor_traits : public ggml::cpu::tensor_traits {
+                                        sizeof(float),
+                                        -FLT_MAX,
+                                        FLT_MAX);
++
++            kleidiai_dispatch_count_add(is_gemv ? KLEIDIAI_DISPATCH_PATH_QX_GEMV : KLEIDIAI_DISPATCH_PATH_QX_GEMM,
++                                        slot.kernels->required_cpu);
+         };
+ 
+         for (int64_t batch_idx = 0; batch_idx < ne12; ++batch_idx) {
+diff --git a/ggml/src/ggml-cpu/kleidiai/kleidiai.h b/ggml/src/ggml-cpu/kleidiai/kleidiai.h
+index 38eac58f7..3c7899255 100644
+--- a/ggml/src/ggml-cpu/kleidiai/kleidiai.h
++++ b/ggml/src/ggml-cpu/kleidiai/kleidiai.h
+@@ -6,12 +6,18 @@
+ 
+ #include "ggml-alloc.h"
+ 
++#include <stdint.h>
++
+ #ifdef  __cplusplus
+ extern "C" {
+ #endif
+ 
+ ggml_backend_buffer_type_t ggml_backend_cpu_kleidiai_buffer_type(void);
+ 
++// Total number of KleidiAI micro-kernel invocations since process start.
++// Always counted; intended for tests and diagnostics (see GGML_KLEIDIAI_SUMMARY).
++uint64_t ggml_backend_cpu_kleidiai_dispatch_total(void);
++
+ #ifdef  __cplusplus
+ }
+ #endif
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 419e1eba4..3c521bfc0 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -196,6 +196,11 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
+ 
+     llama_build_and_test(test-llama-archs.cpp)
+ 
++    if (GGML_CPU_KLEIDIAI AND NOT GGML_BACKEND_DL)
++        llama_build_and_test(test-kleidiai-dispatch.cpp)
++        target_link_libraries(test-kleidiai-dispatch PRIVATE ggml-cpu)
++    endif()
++
+     set(MODEL_DIR "${CMAKE_CURRENT_BINARY_DIR}/test-models/")
+     file(MAKE_DIRECTORY "${MODEL_DIR}")
+ 
+diff --git a/tests/test-kleidiai-dispatch.cpp b/tests/test-kleidiai-dispatch.cpp
+new file mode 100644
+index 000000000..e769d3012
+--- /dev/null
++++ b/tests/test-kleidiai-dispatch.cpp
+@@ -0,0 +1,146 @@
++// Fail-closed check that the KleidiAI CPU extra buffer type actually executes its
++// micro-kernels for weights it accepted.
++//
++// Every static and log-level signal about KleidiAI (the KLEIDIAI = 1 build flag, the
++// init-time "primary ... kernel feature" selection log) reports capability or selection,
++// not execution. A measured field defect (ggml-org/llama.cpp issues #26547 / #26630 and
++// the CUDA-host-buffer priority variant) showed configurations where all of those
++// signals claim acceleration while zero KleidiAI kernels run. This test pins the
++// contract at the ggml level: if the KleidiAI buffer type accepts and packs a Q4_0
++// weight, computing a MUL_MAT against it must advance the KleidiAI dispatch counter.
++//
++// If the buffer type declines the weight (unsupported CPU), that is a visible,
++// non-conflatable outcome and the test skips.
++
++#include "ggml.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
++#include "ggml-cpu.h"
++
++#include <cinttypes>
++#include <cstdint>
++#include <cstdio>
++#include <random>
++#include <vector>
++
++// Internal diagnostics hook, declared in ggml/src/ggml-cpu/kleidiai/kleidiai.h (not a
++// public header). Declared locally here to keep the hook out of the public API.
++extern "C" ggml_backend_buffer_type_t ggml_backend_cpu_kleidiai_buffer_type(void);
++extern "C" uint64_t ggml_backend_cpu_kleidiai_dispatch_total(void);
++
++static void fill_q4_0(struct ggml_tensor * tensor, std::mt19937 & gen) {
++    const int64_t n_per_row = tensor->ne[0];
++    const int64_t nrows     = ggml_nrows(tensor);
++
++    std::normal_distribution<float> dis(0.0f, 1.0f);
++    std::vector<float> src((size_t) n_per_row * nrows);
++    for (size_t i = 0; i < src.size(); i++) {
++        src[i] = dis(gen);
++    }
++
++    std::vector<uint8_t> quantized(ggml_nbytes(tensor));
++    ggml_quantize_chunk(GGML_TYPE_Q4_0, src.data(), quantized.data(), 0, nrows, n_per_row, nullptr);
++
++    ggml_backend_tensor_set(tensor, quantized.data(), 0, quantized.size());
++}
++
++static void fill_f32(struct ggml_tensor * tensor, std::mt19937 & gen) {
++    std::normal_distribution<float> dis(0.0f, 1.0f);
++    std::vector<float> src(ggml_nelements(tensor));
++    for (size_t i = 0; i < src.size(); i++) {
++        src[i] = dis(gen);
++    }
++    ggml_backend_tensor_set(tensor, src.data(), 0, ggml_nbytes(tensor));
++}
++
++// Computes mul_mat(weight, activation[k, n_batch]) on the CPU backend and returns how
++// far the KleidiAI dispatch counter advanced.
++static uint64_t run_mul_mat_case(ggml_backend_t backend, struct ggml_tensor * weight, int64_t n_batch, std::mt19937 & gen) {
++    const int64_t k = weight->ne[0];
++
++    struct ggml_init_params params = {
++        /* .mem_size   = */ ggml_tensor_overhead() * 8 + ggml_graph_overhead(),
++        /* .mem_buffer = */ nullptr,
++        /* .no_alloc   = */ true,
++    };
++    struct ggml_context * ctx = ggml_init(params);
++
++    struct ggml_tensor * act = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, k, n_batch);
++    struct ggml_tensor * out = ggml_mul_mat(ctx, weight, act);
++
++    struct ggml_cgraph * gf = ggml_new_graph(ctx);
++    ggml_build_forward_expand(gf, out);
++
++    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_cpu_buffer_type());
++    if (!ggml_gallocr_alloc_graph(galloc, gf)) {
++        fprintf(stderr, "%s: failed to allocate graph\n", __func__);
++        exit(1);
++    }
++
++    fill_f32(act, gen);
++
++    const uint64_t before = ggml_backend_cpu_kleidiai_dispatch_total();
++    if (ggml_backend_graph_compute(backend, gf) != GGML_STATUS_SUCCESS) {
++        fprintf(stderr, "%s: graph compute failed\n", __func__);
++        exit(1);
++    }
++    const uint64_t after = ggml_backend_cpu_kleidiai_dispatch_total();
++
++    ggml_gallocr_free(galloc);
++    ggml_free(ctx);
++
++    return after - before;
++}
++
++int main(void) {
++    const int64_t k = 256; // multiple of QK4_0
++    const int64_t n = 256;
++
++    struct ggml_init_params params = {
++        /* .mem_size   = */ ggml_tensor_overhead() * 2,
++        /* .mem_buffer = */ nullptr,
++        /* .no_alloc   = */ true,
++    };
++    struct ggml_context * ctx_w = ggml_init(params);
++
++    struct ggml_tensor * weight = ggml_new_tensor_2d(ctx_w, GGML_TYPE_Q4_0, k, n);
++
++    ggml_backend_buffer_t buf_w = ggml_backend_alloc_ctx_tensors_from_buft(ctx_w, ggml_backend_cpu_kleidiai_buffer_type());
++    if (buf_w == nullptr) {
++        // The buffer type declined the weight: no kernel for this CPU. That is a
++        // visible outcome, not a silent conflation - nothing to verify here.
++        printf("KleidiAI buffer type declined the Q4_0 weight on this CPU - skipping\n");
++        ggml_free(ctx_w);
++        return 0;
++    }
++
++    std::mt19937 gen(42);
++    fill_q4_0(weight, gen);
++
++    ggml_backend_t backend = ggml_backend_cpu_init();
++    ggml_backend_cpu_set_n_threads(backend, 2);
++
++    int n_failed = 0;
++    const int64_t batch_sizes[2] = { 1, 8 }; // gemv (decode-shaped) and gemm (prefill-shaped)
++    for (int i = 0; i < 2; i++) {
++        const uint64_t n_dispatched = run_mul_mat_case(backend, weight, batch_sizes[i], gen);
++        const bool ok = n_dispatched > 0;
++        printf("mul_mat [%" PRId64 " x %" PRId64 "] * [%" PRId64 " x %" PRId64 "]: %" PRIu64 " KleidiAI kernel invocations - %s\n",
++               k, n, k, batch_sizes[i], n_dispatched, ok ? "OK" : "FAIL");
++        if (!ok) {
++            n_failed++;
++        }
++    }
++
++    ggml_backend_free(backend);
++    ggml_backend_buffer_free(buf_w);
++    ggml_free(ctx_w);
++
++    if (n_failed > 0) {
++        fprintf(stderr, "FAIL: the KleidiAI buffer type accepted the weight but executed zero micro-kernels\n");
++        return 1;
++    }
++
++    printf("OK\n");
++    return 0;
++}
