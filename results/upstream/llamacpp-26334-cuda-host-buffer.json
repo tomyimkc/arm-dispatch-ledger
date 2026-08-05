@@ -1,0 +1,2594 @@
+{
+  "$schema_note": "Evidence for a reproduction of ggml-org/llama.cpp#26334, produced by tomyimkc/polygraph's real, shipped tools/polygraph CLI (tools/verify_dispatch.py underneath, unmodified) against a from-source llama.cpp build on the DGX Spark. Not committed per instructions -- this file lives only in the working tree.",
+  "issue": "ggml-org/llama.cpp#26334",
+  "date": "2026-08-05",
+  "not_previously_reproduced_by": "This project's own established findings (ggml-org/llama.cpp#26547, Finding 3 / docs/issues/finding3-*) are DIFFERENT defects (compiler CPU-feature-table gaps, thread-count gating) already recorded elsewhere under results/. This file covers #26334 only: the GPU-host-buffer-vs-KleidiAI CPU buffer-type priority-ordering bug.",
+  "provenance": {
+    "hardware": "NVIDIA DGX Spark (GB10), Cortex-X925 + Cortex-A725, 20 cores, 121 GiB RAM, Armv9.2 -- reached via the repo's cluster-connect skill (Cloudflare Tunnel SSH), hostname redacted per project rule",
+    "uname": "Linux <REDACTED-HOSTNAME> 6.17.0-1021-nvidia #21-Ubuntu SMP PREEMPT_DYNAMIC Wed May 27 19:14:05 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
+    "os": "Ubuntu 24.04 (kernel is the NVIDIA DGX Spark image)",
+    "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "cmake": "cmake version 3.28.3",
+    "nvcc": "Cuda compilation tools, release 13.0, V13.0.88, Build cuda_13.0.r13.0/compiler.36424714_0",
+    "gpu": "NVIDIA GB10, driver 580.159.03, CUDA runtime 13.0, compute capability 12.1 (sm_121 / nvidia-smi reports 121a-real to cmake)",
+    "gdb": "GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1) 15.1",
+    "python3": "Python 3.12.3",
+    "ptrace_yama_scope": 1,
+    "ptrace_note": "yama ptrace_scope=1 (restricted-attach) does not block gdb from spawning llama-cli as its own child, which is how tools/verify_dispatch.py's L3 probe always operates -- no elevated privilege was needed or used.",
+    "llama_cpp_commit": "dbadb68eecdfb3ab0e86872d011738fc937f0364",
+    "llama_cpp_repo_state": "HEAD detached at dbadb68ee, working tree clean (matches this project's existing verified builds at ~/polygraph-server-lane/llama.cpp -- same clone, same commit, no changes made)",
+    "model": {
+      "file": "q05.gguf (Qwen2.5-0.5B-Instruct-Q4_0, Apache-2.0)",
+      "sha256": "c8cd5f37dd1235fb010c45316d4ff8af875e1a4e0ff368b4bf6cacb9053d4919",
+      "note": "Same model file already present at ~/polygraph-server-lane/q05.gguf from prior sessions per the task instructions; not re-downloaded."
+    },
+    "polygraph_repo_commit_used": "e717297 (tools/polygraph + tools/verify_dispatch.py copied via rsync to the Spark, unmodified, from this exact checkout)"
+  },
+  "build": {
+    "why_a_new_build_was_required": "Both pre-existing Spark builds (~/polygraph-server-lane/llama.cpp/build and .../build-fixed) have GGML_CUDA:BOOL=OFF in their CMakeCache.txt -- neither can exercise #26334's mechanism, which requires a CUDA device to be present in the model's `devices` list so a GPU host buffer type competes with KleidiAI's CPU extra buffer type. A new build was genuinely required; no existing artifact fit.",
+    "new_build_dir": "~/polygraph-server-lane/llama.cpp/build-cuda-kleidiai",
+    "configure_command": "CUDACXX=/usr/local/cuda/bin/nvcc cmake -S . -B build-cuda-kleidiai -DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=\"armv9.2-a+sve2+i8mm+bf16+dotprod\" -DCMAKE_CUDA_ARCHITECTURES=native -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc",
+    "build_command": "cmake --build build-cuda-kleidiai -j20",
+    "why_ggml_native_off_and_arm_arch_set": "Deliberate choice, disclosed here: on this exact machine (gcc 13.3 + Cortex-X925), the DOCUMENTED KleidiAI build line (-DGGML_CPU_KLEIDIAI=ON -DCMAKE_BUILD_TYPE=Release alone, GGML_NATIVE defaulting ON) compiles ZERO kai_run_matmul symbols -- that is this project's OWN separate, already-filed finding (ggml-org/llama.cpp#26547 / Finding 3). Using that broken default here would confound #26334's buffer-ordering bug with #26547's compile-time bug and make it impossible to tell which one caused 0 dispatch hits. So this build uses the SAME GGML_NATIVE=OFF + GGML_CPU_ARM_ARCH workaround this project's own build-fixed/ already uses, confirmed below to compile real kai_run_matmul symbols, and adds GGML_CUDA=ON on top. This means the reproduction below isolates #26334's mechanism specifically -- it does NOT reproduce izard's exact reported command line/build if their gcc/CPU-table combination also had #26547's zero-symbol bug (unknown -- they disclosed no compiler or CPU model).",
+    "cmake_cache_key_flags": {
+      "GGML_CUDA": "ON",
+      "GGML_CPU_KLEIDIAI": "ON",
+      "CMAKE_BUILD_TYPE": "Release",
+      "GGML_NATIVE": "OFF",
+      "GGML_CPU_ARM_ARCH": "armv9.2-a+sve2+i8mm+bf16+dotprod",
+      "CMAKE_CUDA_ARCHITECTURES": "native (resolved by cmake to 121a-real)"
+    },
+    "configure_log_excerpt": "-- Replacing 121-real in CMAKE_CUDA_ARCHITECTURES_NATIVE with 121a-real\n-- Using CMAKE_CUDA_ARCHITECTURES=121a-real CMAKE_CUDA_ARCHITECTURES_NATIVE=121a-real\n-- CUDA host compiler is GNU 13.3.0\n-- Including CUDA backend\n-- ggml version: 0.18.0\n-- ggml commit:  dbadb68ee",
+    "build_result": "Completed with exit 0; only warning was an unrelated failed HTTP download of an optional UI dist.tar.gz asset (harmless, does not affect llama-cli/libggml-cpu.so/libggml-cuda.so). Produced libggml-cuda.so.0.18.0 (41.7 MB), libggml-cpu.so.0.18.0, llama-cli.",
+    "l1_symbol_check_at_build_time": "nm -D --defined-only libggml-cpu.so | grep kai_run_matmul -> 10 unique kai_run_matmul_* symbols (T/defined), matching this project's own build-fixed/ result and confirming KleidiAI genuinely compiled in (ruling out #26547's zero-symbol failure mode for this build)."
+  },
+  "source_verification": {
+    "note": "Traced independently against this exact checked-out commit (dbadb68ee) before running anything, not just trusted from the issue thread.",
+    "make_cpu_buft_list": "src/llama-model.cpp:894-935 -- comment 'CPU: ACCEL -> GPU host -> CPU extra -> CPU'. `if (!no_host)` block (lines 915-922) adds the first device's host buffer type to the list BEFORE the `if (use_extra_bufts)` block (lines 926-940) that adds KleidiAI's extra buft. Confirmed verbatim in this checkout.",
+    "devices_independent_of_ngl": "common/arg.cpp:1077-1097 (parse_device_list) and the caller populate params.devices independently of n_gpu_layers; -ngl only zeroes compute-offloaded layers (confirmed at runtime: 'load_tensors: offloaded 0/25 layers to GPU' while 'llama_prepare_model_devices: using device CUDA0' still fires -- see raw_log_excerpts below).",
+    "no_host_flag": "common/arg.cpp:2377-2380 -- `--no-host` sets params.no_host = true, which is exactly the `no_host` parameter make_cpu_buft_list() checks.",
+    "dev_none_flag": "common/arg.cpp:1077-1097 (parse_device_list) -- a single 'none' device name pushes only a null device (skips ggml_backend_load_all() and any real device), producing an effectively empty devices list for make_cpu_buft_list()'s host-buffer loop.",
+    "debug_log_line": "src/llama-model-loader.cpp:1324-1326 -- the 'cannot be used with preferred buffer type X, using Y instead' diagnostic is LLAMA_LOG_DEBUG, gated behind common_log_verbosity_thold >= LOG_DEFAULT_DEBUG.",
+    "verbose_flag_reaches_debug": "common/arg.cpp:3803-3807 -- `-v`/`--verbose` sets params.verbosity = INT_MAX, which is >= LOG_DEFAULT_DEBUG, so the debug diagnostic above IS visible in this reproduction (all three arms below pass --verbose, inherited unchanged from tools/targets/llama-cpp-kleidiai.json's workload.arg_template)."
+  },
+  "polygraph_targets_used": {
+    "note": "tools/polygraph explicitly supports per-target declarative JSON under tools/targets/ (see its own module docstring: 'of ANY target described by a declarative JSON file'). The shipped llama-cpp-kleidiai.json preset's workload.arg_template has no placeholder for -ngl/-dev/--no-host, so three ONE-OFF variant target files were added (NOT committed, NOT part of the polygraph repo) that are byte-identical to tools/targets/llama-cpp-kleidiai.json's l1/l2/l3 sections and differ ONLY in workload.arg_template (an appended '-ngl 0', optionally '--no-host' or '-dev none'). This is the real shipped CLI's own declared extension mechanism, not a reimplementation of its L1/L2/L3 logic -- verify_dispatch.py ran completely unmodified.",
+    "llama-cpp-kleidiai-cuda-ngl0-baseline": {
+      "name": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+      "aliases": [
+        "kleidiai-cuda-ngl0-baseline"
+      ],
+      "tested": false,
+      "description": "Reproduction rig for ggml-org/llama.cpp#26334: llama-cli built with -DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON, run with -ngl 0 (CPU-only inference) and NEITHER --no-host NOR -dev none. Not an upstream-shipped preset -- a one-off variant of tools/targets/llama-cpp-kleidiai.json with -ngl 0 appended to the workload, created only to drive this reproduction. Do not treat 'tested: false' as a defect; it means this exact JSON has not accumulated the multi-platform verified_against history the base preset has.",
+      "why_it_matters": "Per make_cpu_buft_list() in src/llama-model.cpp, when a CUDA device is present in the model's devices list (independent of -ngl, which only zeroes compute-offloaded layers) and --no-host/-dev none are NOT passed, a GPU host (pinned-memory) buffer type is inserted into the CPU buffer-type priority list ahead of KleidiAI's extra-buft entry. select_weight_buft() then picks the first accepting buft in list order, so tensors are given the CUDA host buft before KleidiAI's extra buft is ever tried -- silently bypassing KleidiAI even though -ngl 0 was passed and the KLEIDIAI=1 banner still prints. This is the exact mechanism ggml-org/llama.cpp#26334's reporter (izard) described and gaugarg-nv (NVIDIA CUDA-backend maintainer) confirmed with a doc/policy-level reply; the issue was closed via a documented workaround, not a code fix, and nobody in the thread produced a measured before/after.",
+      "platforms": {
+        "linux": {
+          "binary_globs": [
+            "llama-cli",
+            "bin/llama-cli"
+          ],
+          "lib_globs": [
+            "libggml-cpu.so",
+            "libggml-cpu*.so*"
+          ]
+        }
+      },
+      "l1": {
+        "enabled": true,
+        "scan_target": "lib",
+        "symbol_prefix": "kai_",
+        "dispatch_regex": "^kai_run_matmul",
+        "family_order": [
+          "sme2",
+          "sme",
+          "sve2",
+          "sve",
+          "i8mm",
+          "dotprod",
+          "neon"
+        ],
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json -- same regex, same family order."
+      },
+      "l2": {
+        "enabled": true,
+        "advertised_family_label": "advertised_family",
+        "fallback_indicator_label": null,
+        "patterns": [
+          {
+            "label": "advertised_family",
+            "regex": "kleidiai: primary q4 kernel feature (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "primary_kernel_feature_q8",
+            "regex": "kleidiai: primary q8 kernel feature (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "sme_enabled",
+            "regex": "kleidiai: SME2? enabled \\(([^)]*)\\)",
+            "group": 1
+          },
+          {
+            "label": "sme_disabled",
+            "regex": "kleidiai: SME disabled",
+            "group": 0
+          },
+          {
+            "label": "buffer_type_fallback",
+            "regex": "cannot be used with preferred buffer type (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "no_kernel_warning",
+            "regex": "kleidiai: no kernel for tensor type (\\S+), not accelerated",
+            "group": 1
+          },
+          {
+            "label": "system_info",
+            "regex": "system_info:.*",
+            "group": 0
+          }
+        ],
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json. 'buffer_type_fallback' is the one existing pattern most relevant to #26334: with --verbose (see workload) llama.cpp's verbosity threshold is raised to INT_MAX, which includes LLAMA_LOG_DEBUG -- so the 'cannot be used with preferred buffer type X, using Y instead' line the #26334 thread said only appears at debug verbosity should actually be visible here."
+      },
+      "l3": {
+        "enabled": true,
+        "scan_target": "lib",
+        "dispatch_regex": "^kai_run_matmul",
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json."
+      },
+      "workload": {
+        "requires": [
+          "model"
+        ],
+        "arg_template": [
+          "-m",
+          "{model}",
+          "-p",
+          "{prompt}",
+          "-n",
+          "{n_predict}",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "{threads}",
+          "--verbose",
+          "-ngl",
+          "0"
+        ],
+        "defaults": {
+          "prompt": "Hello.",
+          "n_predict": "4",
+          "threads": "2"
+        },
+        "note": "Identical to tools/targets/llama-cpp-kleidiai.json's arg_template with '-ngl 0' appended -- this is izard's #26334 command line ('their way of forcing CPU-only inference'), on a binary built WITH CUDA support so a GPU host buft candidate exists in devices. No --no-host / -dev none: this is the reporter's original, unpatched command line."
+      }
+    },
+    "llama-cpp-kleidiai-cuda-ngl0-nohost": {
+      "name": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+      "aliases": [
+        "kleidiai-cuda-ngl0-nohost"
+      ],
+      "tested": false,
+      "description": "Reproduction rig for ggml-org/llama.cpp#26334: llama-cli built with -DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON, run with -ngl 0 (CPU-only inference) and WITH --no-host (the maintainer-documented workaround). Not an upstream-shipped preset -- a one-off variant of tools/targets/llama-cpp-kleidiai.json with -ngl 0 appended to the workload, created only to drive this reproduction. Do not treat 'tested: false' as a defect; it means this exact JSON has not accumulated the multi-platform verified_against history the base preset has.",
+      "why_it_matters": "Per make_cpu_buft_list() in src/llama-model.cpp, when a CUDA device is present in the model's devices list (independent of -ngl, which only zeroes compute-offloaded layers) and --no-host/-dev none are NOT passed, a GPU host (pinned-memory) buffer type is inserted into the CPU buffer-type priority list ahead of KleidiAI's extra-buft entry. select_weight_buft() then picks the first accepting buft in list order, so tensors are given the CUDA host buft before KleidiAI's extra buft is ever tried -- silently bypassing KleidiAI even though -ngl 0 was passed and the KLEIDIAI=1 banner still prints. This is the exact mechanism ggml-org/llama.cpp#26334's reporter (izard) described and gaugarg-nv (NVIDIA CUDA-backend maintainer) confirmed with a doc/policy-level reply; the issue was closed via a documented workaround, not a code fix, and nobody in the thread produced a measured before/after.",
+      "platforms": {
+        "linux": {
+          "binary_globs": [
+            "llama-cli",
+            "bin/llama-cli"
+          ],
+          "lib_globs": [
+            "libggml-cpu.so",
+            "libggml-cpu*.so*"
+          ]
+        }
+      },
+      "l1": {
+        "enabled": true,
+        "scan_target": "lib",
+        "symbol_prefix": "kai_",
+        "dispatch_regex": "^kai_run_matmul",
+        "family_order": [
+          "sme2",
+          "sme",
+          "sve2",
+          "sve",
+          "i8mm",
+          "dotprod",
+          "neon"
+        ],
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json -- same regex, same family order."
+      },
+      "l2": {
+        "enabled": true,
+        "advertised_family_label": "advertised_family",
+        "fallback_indicator_label": null,
+        "patterns": [
+          {
+            "label": "advertised_family",
+            "regex": "kleidiai: primary q4 kernel feature (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "primary_kernel_feature_q8",
+            "regex": "kleidiai: primary q8 kernel feature (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "sme_enabled",
+            "regex": "kleidiai: SME2? enabled \\(([^)]*)\\)",
+            "group": 1
+          },
+          {
+            "label": "sme_disabled",
+            "regex": "kleidiai: SME disabled",
+            "group": 0
+          },
+          {
+            "label": "buffer_type_fallback",
+            "regex": "cannot be used with preferred buffer type (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "no_kernel_warning",
+            "regex": "kleidiai: no kernel for tensor type (\\S+), not accelerated",
+            "group": 1
+          },
+          {
+            "label": "system_info",
+            "regex": "system_info:.*",
+            "group": 0
+          }
+        ],
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json. 'buffer_type_fallback' is the one existing pattern most relevant to #26334: with --verbose (see workload) llama.cpp's verbosity threshold is raised to INT_MAX, which includes LLAMA_LOG_DEBUG -- so the 'cannot be used with preferred buffer type X, using Y instead' line the #26334 thread said only appears at debug verbosity should actually be visible here."
+      },
+      "l3": {
+        "enabled": true,
+        "scan_target": "lib",
+        "dispatch_regex": "^kai_run_matmul",
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json."
+      },
+      "workload": {
+        "requires": [
+          "model"
+        ],
+        "arg_template": [
+          "-m",
+          "{model}",
+          "-p",
+          "{prompt}",
+          "-n",
+          "{n_predict}",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "{threads}",
+          "--verbose",
+          "-ngl",
+          "0",
+          "--no-host"
+        ],
+        "defaults": {
+          "prompt": "Hello.",
+          "n_predict": "4",
+          "threads": "2"
+        },
+        "note": "Identical to the baseline variant's arg_template with '--no-host' appended -- the first of gaugarg-nv's two documented workarounds. --no-host sets params.no_host=true, which skips the 'add host buffer' block in make_cpu_buft_list() entirely, so KleidiAI's extra-buft entry is no longer preceded by a competing CUDA host buft."
+      }
+    },
+    "llama-cpp-kleidiai-cuda-ngl0-devnone": {
+      "name": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+      "aliases": [
+        "kleidiai-cuda-ngl0-devnone"
+      ],
+      "tested": false,
+      "description": "Reproduction rig for ggml-org/llama.cpp#26334: llama-cli built with -DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON, run with -ngl 0 (CPU-only inference) and WITH -dev none (the maintainer-documented workaround). Not an upstream-shipped preset -- a one-off variant of tools/targets/llama-cpp-kleidiai.json with -ngl 0 appended to the workload, created only to drive this reproduction. Do not treat 'tested: false' as a defect; it means this exact JSON has not accumulated the multi-platform verified_against history the base preset has.",
+      "why_it_matters": "Per make_cpu_buft_list() in src/llama-model.cpp, when a CUDA device is present in the model's devices list (independent of -ngl, which only zeroes compute-offloaded layers) and --no-host/-dev none are NOT passed, a GPU host (pinned-memory) buffer type is inserted into the CPU buffer-type priority list ahead of KleidiAI's extra-buft entry. select_weight_buft() then picks the first accepting buft in list order, so tensors are given the CUDA host buft before KleidiAI's extra buft is ever tried -- silently bypassing KleidiAI even though -ngl 0 was passed and the KLEIDIAI=1 banner still prints. This is the exact mechanism ggml-org/llama.cpp#26334's reporter (izard) described and gaugarg-nv (NVIDIA CUDA-backend maintainer) confirmed with a doc/policy-level reply; the issue was closed via a documented workaround, not a code fix, and nobody in the thread produced a measured before/after.",
+      "platforms": {
+        "linux": {
+          "binary_globs": [
+            "llama-cli",
+            "bin/llama-cli"
+          ],
+          "lib_globs": [
+            "libggml-cpu.so",
+            "libggml-cpu*.so*"
+          ]
+        }
+      },
+      "l1": {
+        "enabled": true,
+        "scan_target": "lib",
+        "symbol_prefix": "kai_",
+        "dispatch_regex": "^kai_run_matmul",
+        "family_order": [
+          "sme2",
+          "sme",
+          "sve2",
+          "sve",
+          "i8mm",
+          "dotprod",
+          "neon"
+        ],
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json -- same regex, same family order."
+      },
+      "l2": {
+        "enabled": true,
+        "advertised_family_label": "advertised_family",
+        "fallback_indicator_label": null,
+        "patterns": [
+          {
+            "label": "advertised_family",
+            "regex": "kleidiai: primary q4 kernel feature (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "primary_kernel_feature_q8",
+            "regex": "kleidiai: primary q8 kernel feature (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "sme_enabled",
+            "regex": "kleidiai: SME2? enabled \\(([^)]*)\\)",
+            "group": 1
+          },
+          {
+            "label": "sme_disabled",
+            "regex": "kleidiai: SME disabled",
+            "group": 0
+          },
+          {
+            "label": "buffer_type_fallback",
+            "regex": "cannot be used with preferred buffer type (\\S+)",
+            "group": 1
+          },
+          {
+            "label": "no_kernel_warning",
+            "regex": "kleidiai: no kernel for tensor type (\\S+), not accelerated",
+            "group": 1
+          },
+          {
+            "label": "system_info",
+            "regex": "system_info:.*",
+            "group": 0
+          }
+        ],
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json. 'buffer_type_fallback' is the one existing pattern most relevant to #26334: with --verbose (see workload) llama.cpp's verbosity threshold is raised to INT_MAX, which includes LLAMA_LOG_DEBUG -- so the 'cannot be used with preferred buffer type X, using Y instead' line the #26334 thread said only appears at debug verbosity should actually be visible here."
+      },
+      "l3": {
+        "enabled": true,
+        "scan_target": "lib",
+        "dispatch_regex": "^kai_run_matmul",
+        "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json."
+      },
+      "workload": {
+        "requires": [
+          "model"
+        ],
+        "arg_template": [
+          "-m",
+          "{model}",
+          "-p",
+          "{prompt}",
+          "-n",
+          "{n_predict}",
+          "-no-cnv",
+          "-st",
+          "--simple-io",
+          "-t",
+          "{threads}",
+          "--verbose",
+          "-ngl",
+          "0",
+          "-dev",
+          "none"
+        ],
+        "defaults": {
+          "prompt": "Hello.",
+          "n_predict": "4",
+          "threads": "2"
+        },
+        "note": "Identical to the baseline variant's arg_template with '-dev none' appended -- the second of gaugarg-nv's two documented workarounds. -dev none makes parse_device_list() push a single null device, so the model's devices list is empty and no CUDA host buft is ever added ahead of KleidiAI's extra-buft entry."
+      }
+    }
+  },
+  "single_run_results": {
+    "baseline_A": {
+      "description": "izard's #26334 command line: -ngl 0, no --no-host, no -dev none. CUDA device present, GPU host buft competes with and precedes KleidiAI's extra buft.",
+      "command": "python3 tools/polygraph check llama-cpp-kleidiai-cuda-ngl0-baseline --binary build-cuda-kleidiai/bin/llama-cli --model q05.gguf --l3-timeout 60 --l2-timeout 30",
+      "human_report_literal": "WARNING: target 'llama-cpp-kleidiai-cuda-ngl0-baseline' is marked untested (never verified against a real artifact) -- results may not be meaningful. See `polygraph explain llama-cpp-kleidiai-cuda-ngl0-baseline` for caveats.\n# polygraph check llama-cpp-kleidiai-cuda-ngl0-baseline -- linux-aarch64 / [unknown Linux CPU -- /proc/cpuinfo model name/Model not found]\n# binary=/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli\nMISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all\n\n  L1 (static)     10/149 matching symbols in libggml-cpu.so   [nm]\n  L2 (selection)  advertised_family=I8MM, primary_kernel_feature_q8=I8MM, sme_disabled=True, buffer_type_fallback=CUDA_Host,, no_kernel_warning=q4_1, system_info=True\n  L3 (dispatch)   0 hits, dominant=none   [gdb]\n\nverdict: NO_DISPATCH_OBSERVED   level_reached: 3/3\nexit 1\nEXIT_CODE=1\n",
+      "json_output": {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.4387908189091831,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CUDA_Host,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CUDA_Host,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 1.61,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmp_f0g3rwc.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "kernel_family_executed": "none",
+          "hits_by_symbol": {},
+          "hits_by_family": {},
+          "total_hits": 0,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "NO_DISPATCH_OBSERVED",
+        "headline": "MISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all",
+        "exit_code": 1
+      }
+    },
+    "workaround_nohost_B": {
+      "description": "Same command + --no-host (gaugarg-nv's documented workaround 1). CUDA device still present/used for compute-graph scheduling reservation, but the host-buffer-preference step is skipped.",
+      "command": "python3 tools/polygraph check llama-cpp-kleidiai-cuda-ngl0-nohost --binary build-cuda-kleidiai/bin/llama-cli --model q05.gguf --l3-timeout 60 --l2-timeout 30",
+      "human_report_literal": "WARNING: target 'llama-cpp-kleidiai-cuda-ngl0-nohost' is marked untested (never verified against a real artifact) -- results may not be meaningful. See `polygraph explain llama-cpp-kleidiai-cuda-ngl0-nohost` for caveats.\n# polygraph check llama-cpp-kleidiai-cuda-ngl0-nohost -- linux-aarch64 / [unknown Linux CPU -- /proc/cpuinfo model name/Model not found]\n# binary=/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli\nMATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)\n\n  L1 (static)     10/149 matching symbols in libggml-cpu.so   [nm]\n  L2 (selection)  advertised_family=I8MM, primary_kernel_feature_q8=I8MM, sme_disabled=True, buffer_type_fallback=CPU_KLEIDIAI,, no_kernel_warning=q4_1, system_info=True\n  L3 (dispatch)   7968 hits, dominant=dotprod   [gdb]\n\nverdict: I8MM_HYBRID_DISPATCH   level_reached: 3/3\nexit 0\nEXIT_CODE=0\n",
+      "json_output": {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.7390243748668581,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 3.12,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmprtgr1_14.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0
+      }
+    },
+    "workaround_devnone_D": {
+      "description": "Same command + -dev none (gaugarg-nv's documented workaround 2). CUDA excluded from the model's devices entirely (backend_ptrs.size()==1 vs 2 for --no-host; no CUDA0 entry in sched_reserve).",
+      "command": "python3 tools/polygraph check llama-cpp-kleidiai-cuda-ngl0-devnone --binary build-cuda-kleidiai/bin/llama-cli --model q05.gguf --l3-timeout 60 --l2-timeout 30",
+      "human_report_literal": "WARNING: target 'llama-cpp-kleidiai-cuda-ngl0-devnone' is marked untested (never verified against a real artifact) -- results may not be meaningful. See `polygraph explain llama-cpp-kleidiai-cuda-ngl0-devnone` for caveats.\n# polygraph check llama-cpp-kleidiai-cuda-ngl0-devnone -- linux-aarch64 / [unknown Linux CPU -- /proc/cpuinfo model name/Model not found]\n# binary=/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli\nMATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)\n\n  L1 (static)     10/149 matching symbols in libggml-cpu.so   [nm]\n  L2 (selection)  advertised_family=I8MM, primary_kernel_feature_q8=I8MM, sme_disabled=True, buffer_type_fallback=CPU_KLEIDIAI,, no_kernel_warning=q4_1, system_info=True\n  L3 (dispatch)   7968 hits, dominant=dotprod   [gdb]\n\nverdict: I8MM_HYBRID_DISPATCH   level_reached: 3/3\nexit 0\nEXIT_CODE=0\n",
+      "json_output": {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.7491135271266103,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 4.18,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpux12aubg.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0
+      }
+    }
+  },
+  "raw_llama_cli_log_excerpts": {
+    "note": "Captured from a plain, undecorated `llama-cli ... --verbose` invocation (same argv polygraph's L2 stage builds), grepped for the load-bearing lines. Full logs are ~1000-1500 lines each (per-tensor DEBUG lines dominate) and are not embedded in full here; the load-bearing lines are quoted verbatim below.",
+    "baseline_A": {
+      "devices_still_include_cuda_despite_ngl0": "llama_prepare_model_devices: using device CUDA0 (NVIDIA GB10) (000f:01:00.0) - 118862 MiB free",
+      "ngl0_confirmed": "load_tensors: offloaded 0/25 layers to GPU",
+      "kleidiai_banner_says_on": "kleidiai: primary q4 kernel feature I8MM",
+      "the_bug_itself": "done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 290 others) cannot be used with preferred buffer type CUDA_Host, using CPU instead",
+      "interpretation": "291 tensors had CUDA_Host as their PREFERRED buffer type (i.e. select_weight_buft() picked the GPU host buft first, before ever reaching KleidiAI's extra buft later in the list), then fell back straight to plain 'CPU' (not to KleidiAI) because mmap forces that downgrade without re-consulting the extra-buft list. KleidiAI's own buffer type is never even named as a candidate here."
+    },
+    "workaround_nohost_B": {
+      "the_fix_visible": "done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+      "interpretation": "Only 124 (not 290) tensors fall back, and this time the PREFERRED buffer type is CPU_KLEIDIAI itself -- KleidiAI's extra buft now wins the priority race and is used for the great majority of weights (322.89 MiB reported under 'CPU_KLEIDIAI model buffer size'/'common_memory_breakdown_print'). The residual fallback is KleidiAI's own known, narrower limitation (no q4_1 kernel; see 'kleidiai: no kernel for tensor type q4_1, not accelerated' -- unrelated to #26334)."
+    },
+    "workaround_devnone_D": {
+      "the_fix_visible": "done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 124 others) cannot be used with preferred buffer type CPU_KLEIDIAI, using CPU instead",
+      "interpretation": "Identical outcome to --no-host (same 124-tensor residual, same CPU_KLEIDIAI preferred buft), but via a different mechanism: CUDA is excluded from the model's devices entirely (backend_ptrs.size()==1, no CUDA0 line in sched_reserve, 'CPU compute buffer size' instead of 'CUDA0 compute buffer size'), rather than merely skipping the host-buffer step while keeping CUDA available for compute scheduling."
+    }
+  },
+  "interleaved_sweep": {
+    "note": "Per project hard rule 3, round-robin interleaved (order A,B,D,A,B,D,... -- see run_interleaved.py), 5 reps per arm, all three arms in the same interleave so no arm's reps are ever run consecutively/isolated from the others. This is a DISPATCH-HIT-COUNT comparison, not a wall-clock timing comparison (polygraph's L3 says nothing about performance -- see interpretation.not_established below) -- interleaving + repetition here is extra rigor to rule out a one-off fluke, not a timing requirement.",
+    "script_used": "run_interleaved.py (ad-hoc, not part of the polygraph repo; calls tools/polygraph exactly as documented, once per (arm, rep), via subprocess)",
+    "raw_runs": [
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.451195030938834,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CUDA_Host,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CUDA_Host,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 1.61,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmp91i1eu3m.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "kernel_family_executed": "none",
+          "hits_by_symbol": {},
+          "hits_by_family": {},
+          "total_hits": 0,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "NO_DISPATCH_OBSERVED",
+        "headline": "MISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all",
+        "exit_code": 1,
+        "_arm": "A",
+        "_rep": 0,
+        "_wrapper_wall_time_sec": 3.1102499961853027,
+        "_exit_code_observed": 1
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.7142497210297734,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 3.51,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmp2jz_1lfq.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "B",
+        "_rep": 0,
+        "_wrapper_wall_time_sec": 5.281644821166992,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.652874441118911,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 2.81,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmplb6o98v7.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "D",
+        "_rep": 0,
+        "_wrapper_wall_time_sec": 4.513400316238403,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.3630609279498458,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CUDA_Host,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CUDA_Host,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 1.58,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpgyw9xonj.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "kernel_family_executed": "none",
+          "hits_by_symbol": {},
+          "hits_by_family": {},
+          "total_hits": 0,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "NO_DISPATCH_OBSERVED",
+        "headline": "MISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all",
+        "exit_code": 1,
+        "_arm": "A",
+        "_rep": 1,
+        "_wrapper_wall_time_sec": 2.9959492683410645,
+        "_exit_code_observed": 1
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.9562123448122293,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 2.54,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpqo05nkty.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "B",
+        "_rep": 1,
+        "_wrapper_wall_time_sec": 4.549065589904785,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.680365924956277,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 4.59,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpli4a75uy.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "D",
+        "_rep": 1,
+        "_wrapper_wall_time_sec": 6.316508054733276,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.368814829038456,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CUDA_Host,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CUDA_Host,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 1.59,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpbieb44ab.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "kernel_family_executed": "none",
+          "hits_by_symbol": {},
+          "hits_by_family": {},
+          "total_hits": 0,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "NO_DISPATCH_OBSERVED",
+        "headline": "MISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all",
+        "exit_code": 1,
+        "_arm": "A",
+        "_rep": 2,
+        "_wrapper_wall_time_sec": 3.0305073261260986,
+        "_exit_code_observed": 1
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.6935445601120591,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 5.19,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpffbhrgxb.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "B",
+        "_rep": 2,
+        "_wrapper_wall_time_sec": 6.928992748260498,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.8810042638797313,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 2.58,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpuflr039a.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "D",
+        "_rep": 2,
+        "_wrapper_wall_time_sec": 4.511967182159424,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.3618815918453038,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CUDA_Host,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CUDA_Host,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 1.6,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpy3j9kb98.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "kernel_family_executed": "none",
+          "hits_by_symbol": {},
+          "hits_by_family": {},
+          "total_hits": 0,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "NO_DISPATCH_OBSERVED",
+        "headline": "MISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all",
+        "exit_code": 1,
+        "_arm": "A",
+        "_rep": 3,
+        "_wrapper_wall_time_sec": 3.0199062824249268,
+        "_exit_code_observed": 1
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.7019357688259333,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 4.24,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmpdrducl_i.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "B",
+        "_rep": 3,
+        "_wrapper_wall_time_sec": 5.990641832351685,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.891035488108173,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 2.61,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmptboxoh1k.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "D",
+        "_rep": 3,
+        "_wrapper_wall_time_sec": 4.549172878265381,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.3963803190272301,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CUDA_Host,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CUDA_Host,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 1.56,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmp8igxyljy.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0"
+          ],
+          "kernel_family_executed": "none",
+          "hits_by_symbol": {},
+          "hits_by_family": {},
+          "total_hits": 0,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "NO_DISPATCH_OBSERVED",
+        "headline": "MISMATCH: llama-cpp-kleidiai-cuda-ngl0-baseline advertises I8MM but 0 kernel hits were observed at all",
+        "exit_code": 1,
+        "_arm": "A",
+        "_rep": 4,
+        "_wrapper_wall_time_sec": 2.9988808631896973,
+        "_exit_code_observed": 1
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.8936343509703875,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 4.89,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmp0qxwk6yg.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "--no-host"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-nohost advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "B",
+        "_rep": 4,
+        "_wrapper_wall_time_sec": 6.842818021774292,
+        "_exit_code_observed": 0
+      },
+      {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "tested_preset": false,
+        "platform": "linux-aarch64",
+        "cpu_brand": "[unknown Linux CPU -- /proc/cpuinfo model name/Model not found]",
+        "binary": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+        "lib": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+        "level_requested": 3,
+        "level_reached": 3,
+        "l1": {
+          "available": true,
+          "error": null,
+          "artifact": "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/libggml-cpu.so",
+          "tool_chain": "elf",
+          "total_symbol_count": 149,
+          "matched_symbol_count": 10,
+          "symbols_by_family": {
+            "dotprod": 6,
+            "i8mm": 2,
+            "sve": 2
+          }
+        },
+        "l2": {
+          "available": true,
+          "command": [
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "returncode": 0,
+          "timed_out": false,
+          "error": null,
+          "wall_time_sec": 1.6722614557947963,
+          "matches": {
+            "advertised_family": "I8MM",
+            "primary_kernel_feature_q8": "I8MM",
+            "sme_disabled": true,
+            "buffer_type_fallback": "CPU_KLEIDIAI,",
+            "no_kernel_warning": "q4_1",
+            "system_info": true
+          },
+          "raw_matched_lines": [
+            "kleidiai: primary q4 kernel feature I8MM",
+            "kleidiai: primary q8 kernel feature I8MM",
+            "kleidiai: SME disabled",
+            "cannot be used with preferred buffer type CPU_KLEIDIAI,",
+            "kleidiai: no kernel for tensor type q4_1, not accelerated",
+            "system_info: n_threads = 2 (n_threads_batch = 2) / 20 | CUDA : ARCHS = 1210 | USE_GRAPHS = 1 | BLACKWELL_NATIVE_FP4 = 1 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | "
+          ]
+        },
+        "l3": {
+          "debugger": "gdb",
+          "available": true,
+          "completed": true,
+          "timed_out": false,
+          "error": null,
+          "dispatch_regex": "^kai_run_matmul",
+          "wall_time_sec": 3.66,
+          "command": [
+            "/usr/bin/gdb",
+            "-q",
+            "-batch",
+            "-x",
+            "/tmp/tmp8xggg8_e.gdb",
+            "--args",
+            "/home/tomyimkc/polygraph-server-lane/llama.cpp/build-cuda-kleidiai/bin/llama-cli",
+            "-m",
+            "q05.gguf",
+            "-p",
+            "Hello.",
+            "-n",
+            "4",
+            "-no-cnv",
+            "-st",
+            "--simple-io",
+            "-t",
+            "2",
+            "--verbose",
+            "-ngl",
+            "0",
+            "-dev",
+            "none"
+          ],
+          "kernel_family_executed": "dotprod",
+          "hits_by_symbol": {
+            "kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod": 48,
+            "kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod": 4032,
+            "kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm": 3888
+          },
+          "hits_by_family": {
+            "dotprod": 4080,
+            "i8mm": 3888
+          },
+          "total_hits": 7968,
+          "breakpoints_requested": 10,
+          "breakpoints_created": 10
+        },
+        "advertised": "I8MM",
+        "verdict": "I8MM_HYBRID_DISPATCH",
+        "headline": "MATCH (hybrid): llama-cpp-kleidiai-cuda-ngl0-devnone advertises I8MM and it dispatched (3888/7968 hits were I8MM, the rest a different family)",
+        "exit_code": 0,
+        "_arm": "D",
+        "_rep": 4,
+        "_wrapper_wall_time_sec": 5.383227586746216,
+        "_exit_code_observed": 0
+      }
+    ],
+    "summary": {
+      "A": {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-baseline",
+        "n": 5,
+        "hits_all_reps": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "median_hits": 0,
+        "min_hits": 0,
+        "max_hits": 0,
+        "spread": 0,
+        "verdicts_seen": [
+          "NO_DISPATCH_OBSERVED"
+        ],
+        "exit_codes_seen": [
+          1
+        ]
+      },
+      "B": {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-nohost",
+        "n": 5,
+        "hits_all_reps": [
+          7968,
+          7968,
+          7968,
+          7968,
+          7968
+        ],
+        "median_hits": 7968,
+        "min_hits": 7968,
+        "max_hits": 7968,
+        "spread": 0,
+        "verdicts_seen": [
+          "I8MM_HYBRID_DISPATCH"
+        ],
+        "exit_codes_seen": [
+          0
+        ]
+      },
+      "D": {
+        "target": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+        "n": 5,
+        "hits_all_reps": [
+          7968,
+          7968,
+          7968,
+          7968,
+          7968
+        ],
+        "median_hits": 7968,
+        "min_hits": 7968,
+        "max_hits": 7968,
+        "spread": 0,
+        "verdicts_seen": [
+          "I8MM_HYBRID_DISPATCH"
+        ],
+        "exit_codes_seen": [
+          0
+        ]
+      }
+    },
+    "headline": "5/5 reps: arm A (baseline, no workaround) = 0 L3 dispatch hits every time (verdict NO_DISPATCH_OBSERVED, exit 1). 5/5 reps: arm B (--no-host) = 7968 hits every time (verdict I8MM_HYBRID_DISPATCH, exit 0). 5/5 reps: arm D (-dev none) = 7968 hits every time (verdict I8MM_HYBRID_DISPATCH, exit 0). Zero spread in all three arms across 15 total runs -- fully deterministic on this workload (short prompt, 4 tokens, threads=2)."
+  },
+  "interpretation": {
+    "established": [
+      "The mechanism ggml-org/llama.cpp#26334's reporter (izard) described, and gaugarg-nv (NVIDIA CUDA-backend maintainer) confirmed only at a doc/policy level, is REAL and REPRODUCIBLE at current HEAD (dbadb68ee, 2026-08-05): running llama-cli built with both -DGGML_CPU_KLEIDIAI=ON and -DGGML_CUDA=ON, with -ngl 0 and neither --no-host nor -dev none, silently routes weight tensors to a CUDA host buffer type first, which then downgrades to plain CPU (bypassing KleidiAI entirely) -- confirmed by real, non-halting gdb breakpoints on all 10 kai_run_matmul_* symbols recording ZERO hits, 5/5 interleaved reps, exit code 1.",
+      "Both of gaugarg-nv's documented workarounds (--no-host and -dev none) independently and completely fix it on this build: both produce 7968 real KleidiAI kernel dispatch hits (I8MM + dotprod families), 5/5 interleaved reps each, exit code 0 -- and they do so via genuinely different device-topology paths (--no-host keeps CUDA0 in the compute-scheduling graph; -dev none excludes CUDA entirely), yet land on the identical KleidiAI dispatch outcome.",
+      "The KLEIDIAI=1 startup banner and the 'kleidiai: primary q4/q8 kernel feature I8MM' selection lines print IDENTICALLY in all three arms (buggy and both fixed) -- confirming the L2 signal the issue thread said was uninformative here: banner-watching alone cannot distinguish the buggy run from either fixed run.",
+      "The one runtime diagnostic that DOES distinguish them -- 'cannot be used with preferred buffer type X, using Y instead' -- is visible in this reproduction (because --verbose raises verbosity to INT_MAX, which is >= the line's LLAMA_LOG_DEBUG gate) and names the exact buffer type: 'CUDA_Host' (291 tensors) in the buggy arm vs 'CPU_KLEIDIAI' (125 tensors, KleidiAI's own known q4_1 gap only) in both fixed arms. At llama.cpp's DEFAULT verbosity this line would not print at all, matching the issue thread's claim that a default-verbosity user gets zero indication anything was skipped.",
+      "L1 static symbol scanning is identical and unaffected across all three arms (10/149 kai_run_matmul_* symbols in libggml-cpu.so in every run) -- confirming this is purely a runtime buffer-type-selection bug, not a compile-time symbol problem (i.e., independent of and additional to this project's own already-filed #26547)."
+    ],
+    "not_established": [
+      "We did NOT reproduce izard's exact machine: they disclosed only 'Linux' and a version hash, no CPU model or compiler. This build deliberately used this project's own GGML_NATIVE=OFF + GGML_CPU_ARM_ARCH workaround to keep KleidiAI's symbols genuinely compiled in (ruling out this project's own #26547 zero-symbol failure mode as a confound) -- so this reproduction demonstrates the CODE MECHANISM #26334 describes, on hardware where it is buildable, not a byte-for-byte match of the reporter's environment.",
+      "No performance/timing claim is made anywhere in this file. Polygraph's L1/L2/L3 layers establish WHETHER the KleidiAI kernel executed, not by how much the fallback path is slower. Establishing that a run got 0 real KleidiAI dispatch hits (vs the reporter's qualitative '~2x slower') is a different, narrower claim than a measured throughput cost -- no interleaved timing sweep was run for this reproduction because none of the hard evidence needed to answer 'did the code path the OP diagnosed still exist' requires one.",
+      "We did not determine whether host-buffer-before-extra-bufts ordering in make_cpu_buft_list() is an intentional design trade-off (favoring GPU-offload compatibility for weight-buffer prefetch) or an unprioritized bug. This file shows the observable runtime consequence of the current ordering; it does not, and cannot, adjudicate upstream's design intent.",
+      "The reporter's specific proposed code fix (reordering extra-bufts ahead of the host buft) was never evaluated here -- this reproduction ran ONLY the current HEAD behavior plus the two already-documented CLI workarounds, not any patched build.",
+      "ggml-org/llama.cpp#26334 is closed via a user-confirmed workaround, not a merged code change. The honest framing supported by this evidence is: 'the mechanism the OP diagnosed still appears present at HEAD (verified against dbadb68ee, 2026-08-05) even though the issue is closed as resolved-by-workaround' -- not that the issue was never fixed or should be reopened; we do not know upstream's stance on that question.",
+      "This reproduction used a 0.5B model and a 4-token decode; the interleaved sweep's headline number (7968 vs 0 dispatch hits) is a workload-shape-dependent count, not a universal constant -- it is reported here as a hit-count identity check (0 vs nonzero, reproduced 5/5), not as a claim about hit counts at other prompt lengths or model sizes.",
+      "GGML_CUDA_ARCHITECTURES=native resolved to '121a-real' for this GB10 GPU; this build has not been tested on any other CUDA architecture, and the buffer-ordering mechanism itself is architecture-independent (it lives in generic backend-scheduling code, not a GPU kernel), so this is noted for completeness, not because architecture is expected to matter."
+    ]
+  }
+}

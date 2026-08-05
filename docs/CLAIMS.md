@@ -1332,3 +1332,26 @@ between the two methods is made anywhere in this repo. The `3.63x` overhead figu
 single configuration (threads=4, decode_short, 15,936 hits) and has not been shown to generalise.
 The PMU unavailability is **one machine**, and is not evidence about Arm PMU availability in
 general.
+
+### Finding 4 — CUDA host buffer bypasses KleidiAI, 2026-08-05 (`results/upstream/llamacpp-26334-cuda-host-buffer.json`)
+
+Build: `-DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH="armv9.2-a+sve2+i8mm+bf16+dotprod"`,
+llama.cpp `dbadb68ee`, Arm test box (Cortex-X925), `-ngl 0`. 3 arms x 5 round-robin-interleaved
+reps = 15 runs.
+
+| claim | value | source |
+|---|---|---|
+| `kai_run_matmul_*` symbols compiled in (all arms) | 10 of 149 | `interleaved_sweep.raw_runs[].l1` |
+| KleidiAI dispatch hits, default `-ngl 0` | **0** (5/5 reps) | `interleaved_sweep.raw_runs` |
+| KleidiAI dispatch hits, `--no-host` | **7,968** (5/5 reps) | same |
+| KleidiAI dispatch hits, `-dev none` | **7,968** (5/5 reps) | same |
+| tensors reassigned to `CUDA_Host` (buggy arm) | 291 | `raw_llama_cli_log_excerpts` |
+| tensors reassigned to `CPU_KLEIDIAI` (fixed arms) | 125 | same |
+| polygraph exit codes | 1 / 0 / 0 | `interleaved_sweep.raw_runs[].exit_code` |
+
+**What this does NOT establish.** No performance or timing claim is made — this measures *whether*
+the kernel ran, not how much slower the fallback is. No timing sweep was run. It reproduces the
+code mechanism on hardware where it builds, not the original reporter's environment. It does not
+adjudicate whether the buffer-type ordering is intentional. The mechanism was diagnosed upstream
+by `izard` in ggml-org/llama.cpp#26334; the contribution here is the measured reproduction, not
+the diagnosis.

@@ -48,6 +48,32 @@ Exit codes are contractual, so CI can depend on them: **`0`** what was advertise
 **`1`** it did not, **`2`** could not be determined. Never a silent `0`. Full walkthrough in
 [`docs/QUICKSTART.md`](docs/QUICKSTART.md); the one-line CI gate is in [`docs/CI.md`](docs/CI.md).
 
+## The sharpest example: a build where every signal lies except execution
+
+Compile `llama.cpp` with **both** `-DGGML_CPU_KLEIDIAI=ON` and `-DGGML_CUDA=ON`, then run CPU-only
+inference with `-ngl 0`. Every KleidiAI kernel is in the binary. The banner prints `KLEIDIAI = 1`.
+The selection log prints `kleidiai: primary q4/q8 kernel feature I8MM`. **Zero kernels execute.**
+
+| what you can check | buggy run | after adding `--no-host` |
+|---|---|---|
+| `KLEIDIAI = 1` banner | identical | identical |
+| kernel-selection log line | identical | identical |
+| `nm` symbol count | 10/149 | 10/149 |
+| **kernels that actually ran** | **0** | **7,968** |
+
+A CUDA pinned-memory buffer type sits ahead of KleidiAI in the buffer priority list, and `-ngl 0`
+does not remove CUDA from the device list. The one log line that would tell you
+(`cannot be used with preferred buffer type CUDA_Host, using CPU instead`, 291 tensors) is at
+`DEBUG` level and never prints by default.
+
+Unlike the headline finding, this needs **no unusual compiler** — just two build flags people
+deliberately turn on together and the normal way to ask for CPU inference. Full write-up and the
+15-run interleaved evidence:
+[`results/upstream/FINDING-4-CUDA-HOST-BUFFER.md`](results/upstream/FINDING-4-CUDA-HOST-BUFFER.md).
+The mechanism was first diagnosed upstream by `izard` in
+[#26334](https://github.com/ggml-org/llama.cpp/issues/26334) by reading the source; what is new
+here is the measurement.
+
 ## The evidence
 
 Every row below cites the raw JSON it came from — nothing here is estimated or interpolated.
