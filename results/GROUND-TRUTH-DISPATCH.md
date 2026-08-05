@@ -167,3 +167,37 @@ a call count.
 - Issue #22182 independently notes `ggml_cpu_has_sme()` is compile-time, so the banner can mislead.
 
 Nothing found that documents the thread-cap / `ne11 >= 128` dispatch rule.
+
+---
+
+## Addendum — 2026-08-05: replication sweep, probe fail-closed check, and probe cost
+
+Added below the original run rather than edited into it, per this repo's rule that a results page
+records what was measured when it was measured.
+
+**The SVE width-gate result replicates across the full sweep.** The 2026-08-04 finding above was
+confirmed on a single configuration. It has now been re-run on the DGX Spark across **all ten**
+configurations — threads 1/2/4/8/16 x {decode_short, prefill_long}. The SVE kernel family is
+compiled in (2 symbols) and took **0 hits in all ten**. Executed family was `dotprod` for decode
+and `i8mm` for prefill, while L2 advertised `I8MM` throughout — recorded as
+`I8MM_HYBRID_DISPATCH`. Total hits ranged 660 to 51,216 and scaled with thread count.
+
+**The probe's fail-closed behaviour was verified live.** Pointed at the zero-symbol default build,
+the L3 probe refused to run rather than returning a zero:
+
+> `no symbols matching '^kai_run_matmul' found in .../libggml-cpu.so; refusing to run an
+> uninstrumented probe that would report a misleading zero`
+
+This matters because an earlier version of this probe *did* silently report zero hits, which
+looked exactly like a clean negative result. That bug is why `tests/l3_gdb_groundtruth/` exists.
+
+**The probe's cost was measured** — round-robin interleaved, 5 reps per arm, threads=4,
+decode_short: plain median **1.2056 s** vs. under-probe median **4.379 s**, a **3.63x** median
+overhead. The dispatch count was identical (15,936) on all five probed runs, so the count is
+deterministic even though the wall clock is not (spread 2.68 s under gdb vs 0.21 s plain).
+
+**The Arm PMU could not be used as an independent check on this machine.** Two independent
+reasons — `perf_event_paranoid = 4`, and a kernel PMU driver that enumerates 78 events with no
+SVE/SME/ASE instruction-class counter among them. The intended PMU-vs-L3 cross-validation is
+therefore **unperformed, not passed**. Full detail and provenance:
+[`results/pmu/pmu-crosscheck.json`](pmu/pmu-crosscheck.json).

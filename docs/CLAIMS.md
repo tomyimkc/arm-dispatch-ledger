@@ -1309,3 +1309,26 @@ walls of `[21.54, 23.42, 15.96]` (broken) and `[18.87, 12.21, 11.99]` (fixed) â€
 page cache on a 4.4 GB file, not architecture. Re-running with a discarded warmup per binary and
 n=5 tightened it to `[16.18, 16.86, 18.01, 16.00, 16.16]` vs `[12.16, 12.15, 12.11, 11.79, 11.96]`
 and gave the honest 1.34x. **The 1.76x figure was never published.**
+
+### PMU cross-check attempt and L3 probe cost, 2026-08-05 (`results/pmu/pmu-crosscheck.json`)
+
+Arm test box: Cortex-X925 + Cortex-A725, 20 cores, Armv9.2, bare metal, kernel 6.17.0-1021-nvidia,
+gcc 13.3.0, gdb 15.1, perf 6.17.13.
+
+| claim | value | source |
+|---|---|---|
+| `perf_event_paranoid` | 4 | `pmu_availability.perf_event_paranoid` |
+| PMU events enumerated by `armv8_pmuv3_0` | 78 | `pmu_availability...kernel_exposed_event_list` |
+| of those, SVE/SME/ASE instruction-class events | 0 | `sve_sme_ase_specific_events_present: false` |
+| plain run, median wall clock (n=5, interleaved) | 1.2056 s | `overhead_measurement.plain_median_sec` |
+| under L3 gdb probe, median wall clock (n=5, interleaved) | 4.379 s | `overhead_measurement.l3_gdb_median_sec` |
+| L3 median overhead | 3.63x | `overhead_measurement.overhead_multiplier_median` |
+| L3 dispatch hits, every one of 5 probed runs | 15,936 | `overhead_measurement.note` |
+| SVE-family L3 hits across all 10 swept configs | 0 | `comparison.fixed_build_ten_symbol.l3_full_sweep` |
+
+**What this does NOT establish.** The PMU-vs-L3 numeric cross-validation was **not performed** â€”
+it could not be, for the two independent reasons above. No claim of agreement or disagreement
+between the two methods is made anywhere in this repo. The `3.63x` overhead figure is from a
+single configuration (threads=4, decode_short, 15,936 hits) and has not been shown to generalise.
+The PMU unavailability is **one machine**, and is not evidence about Arm PMU availability in
+general.

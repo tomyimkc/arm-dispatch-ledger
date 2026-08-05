@@ -1,0 +1,402 @@
+{
+ "schema_version": 1,
+ "generated_at_utc": "2026-08-05T15:45:00Z",
+ "task": "Cross-validate tools/verify_dispatch.py's L3 (debugger breakpoint) dispatch verification against the Arm PMU's own hardware instruction-class counters (SVE_INST_SPEC / ASE_INST_SPEC via perf), on real Arm hardware, prompted by a prior-art review noting L3 is standard debugger scripting while Arm ships a native PMU that answers a related question with no code.",
+ "environment": {
+  "host_label": "the Arm test box (DGX Spark) -- hostname intentionally omitted; see this repo's operator docs for how to reach it. Never write the real hostname into this public repo.",
+  "uname_a": "Linux <host redacted> 6.17.0-1021-nvidia #21-Ubuntu SMP PREEMPT_DYNAMIC Wed May 27 19:14:05 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
+  "lscpu": {
+   "Architecture": "aarch64",
+   "CPU(s)": 20,
+   "On-line CPU(s) list": "0-19",
+   "Vendor ID": "ARM",
+   "cores": [
+    {
+     "Model name": "Cortex-X925",
+     "Cores per socket": 10,
+     "Max MHz": 3900.0,
+     "Min MHz": 1378.0
+    },
+    {
+     "Model name": "Cortex-A725",
+     "Cores per socket": 10,
+     "Max MHz": 2808.0,
+     "Min MHz": 338.0
+    }
+   ],
+   "Flags_raw": "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp sve2 sveaes svepmull svebitperm svesha3 svesm4 flagm2 frint svei8mm svebf16 i8mm bf16 dgh bti ecv afp wfxt",
+   "note_no_sme_flag": "Neither 'sme' nor 'sme2' appears in these flags -- this SoC does not implement SME/SME2 at all (unlike the Apple M4 Max lane in results/GROUND-TRUTH-DISPATCH.md). It does implement sve2 with svei8mm/svebf16, same architectural generation as the Neoverse-N2 CI lane.",
+   "L1d_cache": "1.3 MiB (20 instances)",
+   "L2_cache": "25 MiB (20 instances)",
+   "L3_cache": "24 MiB (2 instances)",
+   "virtualization_check": "systemd-detect-virt reported 'none' (rc=1 meaning bare metal, not a VM/container)"
+  },
+  "gcc_version": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "gdb_version": "GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1) 15.1",
+  "perf_version": "perf version 6.17.13",
+  "python3_version": "Python 3.12.3",
+  "user_context": "unprivileged, non-interactive SSH session; user is in the 'sudo' group but sudo requires an interactive password ('sudo -n true' failed with 'a password is required'), so no privilege escalation was available or attempted",
+  "llama_cpp_commit": "dbadb68ee (\"ggml: use dynamic allocation for split graph inputs (#22789)\") -- same commit results/server/spark-provenance.txt and results/GROUND-TRUTH-DISPATCH.md were measured against",
+  "model": "q05.gguf == Qwen2.5-0.5B-Instruct-Q4_0.gguf (337 MB), already present at ~/polygraph-server-lane/q05.gguf on the Arm test box from a prior session -- not re-downloaded, same model file results/GROUND-TRUTH-DISPATCH.md used on the Apple M4 Max lane",
+  "builds_used": {
+   "default_zero_symbol": {
+    "path_on_box": "~/polygraph-server-lane/llama.cpp/build/bin/llama-cli (+ libggml-cpu.so in same dir)",
+    "cmake_flags": {
+     "GGML_CPU_KLEIDIAI": "ON",
+     "GGML_CPU_ARM_ARCH": "(empty, default)",
+     "GGML_NATIVE": "ON"
+    },
+    "kai_run_matmul_symbol_count_L1": 0,
+    "description": "The project's documented default-flags build. GGML_NATIVE=ON on this gcc/CPU combination compiles zero kai_run_matmul kernels even though the KLEIDIAI=1 banner still prints, per results/server/spark-provenance.txt."
+   },
+   "fixed_ten_symbol": {
+    "path_on_box": "~/polygraph-server-lane/llama.cpp/build-fixed/bin/llama-cli (+ libggml-cpu.so in same dir)",
+    "cmake_flags": {
+     "GGML_CPU_KLEIDIAI": "ON",
+     "GGML_CPU_ARM_ARCH": "armv9.2-a+sve2+i8mm+bf16+dotprod",
+     "GGML_NATIVE": "OFF"
+    },
+    "kai_run_matmul_symbol_count_L1": 10,
+    "kai_symbols_by_family_L1": {
+     "dotprod": 6,
+     "i8mm": 2,
+     "sve": 2
+    },
+    "description": "The project's documented 'fixed' build (explicit -march instead of GGML_NATIVE). Compiles a full KleidiAI kernel set, matching results/server/spark-provenance.txt."
+   }
+  },
+  "tool_provenance": "Ran the project's own tools/verify_dispatch.py + tools/dispatch_probe.gdb (copied verbatim from this checkout, not reimplemented) on the Arm test box, plus a small local driver (overhead_test.py, not committed) that imports verify_dispatch's own run_l3_gdb()/_run_with_timeout() to do the round-robin A/B timing so the timed 'B' arm is byte-identical to the shipped probe."
+ },
+ "pmu_availability": {
+  "summary": "PMU NOT REACHABLE from this session. Two independent, separately-confirmed reasons -- see below. This is itself the finding requested by the task's instructions for this exact scenario.",
+  "perf_tool_present": true,
+  "perf_version": "perf version 6.17.13",
+  "perf_event_paranoid": 4,
+  "kptr_restrict": 1,
+  "reason_1_privilege": {
+   "description": "perf_event_paranoid=4 on this box blocks perf_event_open() for any process without CAP_PERFMON/CAP_SYS_PTRACE/CAP_SYS_ADMIN. This session's shell has cap_perfmon only in its bounding set, not its effective set, and sudo requires an interactive password this non-interactive session cannot supply.",
+   "command_1": "perf stat -e cycles,instructions -- sleep 0.2",
+   "result_1": "DENIED, rc=255",
+   "raw_error_1": "Error:\nAccess to performance monitoring and observability operations is limited.\nConsider adjusting /proc/sys/kernel/perf_event_paranoid setting to open\naccess to performance monitoring and observability operations for processes\nwithout CAP_PERFMON, CAP_SYS_PTRACE or CAP_SYS_ADMIN Linux capability.\n...\nperf_event_paranoid setting is 4:\n  -1: Allow use of (almost) all events by all users\n>= 0: Disallow raw and ftrace function tracepoint access\n>= 1: Disallow CPU event access\n>= 2: Disallow kernel profiling",
+   "command_2": "perf stat -e task-clock -- sleep 0.2  (a SOFTWARE event; the documented paranoid semantics say '>=1: disallow CPU event access', which should not gate software-only events)",
+   "result_2": "ALSO DENIED, identical error -- this box's paranoid=4 is stricter in practice than the documented -1/0/1/2/3 ladder describes: it blocked even a pure-software perf event for a non-privileged, non-CAP_PERFMON process.",
+   "privilege_escalation_attempted": {
+    "sudo_passwordless_check": "sudo -n true",
+    "result": "FAILED: \"sudo: a password is required\"",
+    "action_taken": "None. No system file, sysctl, or service was modified to work around this (per the task's read-only-inspection rule). perf_event_paranoid was read, never written."
+   }
+  },
+  "reason_2_kernel_driver_does_not_expose_the_events_at_all": {
+   "description": "Independent of privilege: the kernel's own armv8_pmuv3_0 PMU driver on this box (6.17.0-1021-nvidia) does not enumerate any SVE/SME/ASE-class instruction-mix event at all -- neither via `perf list` nor via the raw sysfs event-alias directory the driver populates. This is a driver/firmware enumeration fact, not a permissions fact, so it would very likely still hold even with root/CAP_PERFMON (untested, since reason 1 already blocks all perf_event_open() calls regardless of the specific event requested).",
+   "perf_list_grep_command": "perf list | grep -iE 'sve|sme|inst_spec|ase'",
+   "perf_list_grep_result": "Only one architectural match: 'inst_spec OR armv8_pmuv3_0/inst_spec/ [Kernel PMU event]' -- this is the ARMv8 PMUv3-common 'speculatively executed instruction' counter (all instructions, ISA-class-undifferentiated), NOT the SVE- or SME-specific speculative-instruction event (SVE_INST_SPEC / ASE_INST_SPEC / SME class events) the task asked to check for. Every other line matched by the grep was an unrelated kernel tracepoint whose name happens to contain 'release' (matched by the 'ase' fragment) -- filesystem/network/lock release events, not Arm SIMD events.",
+   "kernel_exposed_event_list_source": "ls /sys/bus/event_source/devices/armv8_pmuv3_0/events/  (ground truth of exactly which symbolic events this kernel's arm_pmu driver has registered, independent of perf's own JSON event-alias tables)",
+   "kernel_exposed_event_list": [
+    "br_immed_retired",
+    "br_mis_pred",
+    "br_mis_pred_retired",
+    "br_pred",
+    "br_retired",
+    "br_return_retired",
+    "bus_access",
+    "bus_cycles",
+    "cid_write_retired",
+    "cnt_cycles",
+    "cpu_cycles",
+    "cti_trigout4",
+    "cti_trigout5",
+    "cti_trigout6",
+    "cti_trigout7",
+    "dtlb_walk",
+    "exc_return",
+    "exc_taken",
+    "inst_retired",
+    "inst_spec",
+    "itlb_walk",
+    "l1d_cache",
+    "l1d_cache_lmiss_rd",
+    "l1d_cache_refill",
+    "l1d_cache_wb",
+    "l1d_tlb",
+    "l1d_tlb_refill",
+    "l1i_cache",
+    "l1i_cache_lmiss",
+    "l1i_cache_refill",
+    "l1i_tlb",
+    "l1i_tlb_refill",
+    "l2d_cache",
+    "l2d_cache_allocate",
+    "l2d_cache_lmiss_rd",
+    "l2d_cache_refill",
+    "l2d_cache_wb",
+    "l2d_tlb",
+    "l2d_tlb_refill",
+    "l2i_cache",
+    "l2i_cache_lmiss",
+    "l2i_cache_refill",
+    "l3d_cache",
+    "l3d_cache_allocate",
+    "l3d_cache_lmiss_rd",
+    "l3d_cache_refill",
+    "ld_align_lat",
+    "ldst_align_lat",
+    "ll_cache",
+    "ll_cache_miss",
+    "ll_cache_miss_rd",
+    "ll_cache_rd",
+    "mem_access",
+    "mem_access_checked",
+    "mem_access_checked_rd",
+    "mem_access_checked_wr",
+    "op_retired",
+    "op_spec",
+    "pc_write_retired",
+    "remote_access",
+    "sample_collision",
+    "sample_feed",
+    "sample_filtrate",
+    "sample_pop",
+    "st_align_lat",
+    "stall",
+    "stall_backend",
+    "stall_backend_mem",
+    "stall_frontend",
+    "stall_slot",
+    "stall_slot_backend",
+    "stall_slot_frontend",
+    "trb_wrap",
+    "trcextout0",
+    "trcextout1",
+    "trcextout2",
+    "trcextout3",
+    "ttbr_write_retired"
+   ],
+   "sve_sme_ase_specific_events_present": false,
+   "other_pmu_devices_present": [
+    "arm_spe_0 (Statistical Profiling Extension, a sampling profiler, not an ISA-class instruction counter)",
+    "armv8_pmuv3_0",
+    "armv8_pmuv3_1",
+    "smmuv3_pmcg_* (IOMMU counters, irrelevant)",
+    "breakpoint",
+    "kprobe",
+    "software",
+    "tracepoint",
+    "uprobe"
+   ]
+  },
+  "conclusion": "Both an authorization block and an enumeration gap prevented reaching Arm's SVE/ASE instruction-class PMU counters on this specific box. This matches the scenario the task's own instructions anticipated: 'On many virtualised or locked-down Arm systems the architectural PMU events are NOT exposed -- if that is the case here, that is itself a publishable finding and a genuine argument for the debugger approach.' That is the case here, even though the box is bare metal (not a VM/container) -- the lockdown is a deliberate hardened default (perf_event_paranoid=4) combined with a PMU driver/firmware event set that never registered the finer-grained SVE/SME event codes in the first place."
+ },
+ "comparison": {
+  "note_scope": "Because Arm PMU counts could not be obtained (see pmu_availability), this is NOT the PMU-vs-L3 numeric comparison the task envisioned. It is the closest honest substitute actually run on this hardware: L1 (static nm symbol presence, an independent-of-L3 signal) vs L3 (debugger dispatch counts), on the SAME two builds and the SAME workloads (decode_short, prefill_long) this project already uses, at the SAME 5 thread counts (1,2,4,8,16) it already sweeps. This directly answers the 'does a build with zero kernel symbols show near-zero signal, and does a working build show a large count' directional question the task posed -- just with L1 as the second independent signal instead of a hardware counter.",
+  "default_build_zero_symbol": {
+   "l1_kai_run_matmul_symbol_count": 0,
+   "l1_kai_symbols_by_family": {},
+   "l3_config_tested": {
+    "threads": 4,
+    "workload": "decode_short"
+   },
+   "l3_result": {
+    "debugger": "gdb",
+    "available": false,
+    "total_hits": 0,
+    "error": "no symbols matching '^kai_run_matmul' found in '/home/tomyimkc/polygraph-server-lane/llama.cpp/build/bin/libggml-cpu.so'; refusing to run an uninstrumented probe that would report a misleading zero",
+    "verdict": "L3_UNAVAILABLE"
+   },
+   "interpretation": "L1=0 predicts L3 has nothing to observe. The probe fails CLOSED (refuses to run rather than silently reporting a fake zero) -- this is the tool's designed behavior, verified live here, not a gap in this measurement."
+  },
+  "fixed_build_ten_symbol": {
+   "l1_kai_run_matmul_symbol_count": 10,
+   "l1_kai_symbols_by_family": {
+    "dotprod": 6,
+    "i8mm": 2,
+    "sve": 2
+   },
+   "l3_full_sweep": [
+    {
+     "threads": 1,
+     "workload": "decode_short",
+     "advertised_L2": "I8MM",
+     "executed_L3": "dotprod",
+     "hits_by_family": {
+      "dotprod": 510,
+      "i8mm": 486
+     },
+     "total_hits": 996,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 2.1
+    },
+    {
+     "threads": 2,
+     "workload": "decode_short",
+     "advertised_L2": "I8MM",
+     "executed_L3": "dotprod",
+     "hits_by_family": {
+      "dotprod": 4080,
+      "i8mm": 3888
+     },
+     "total_hits": 7968,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 2.91
+    },
+    {
+     "threads": 4,
+     "workload": "decode_short",
+     "advertised_L2": "I8MM",
+     "executed_L3": "dotprod",
+     "hits_by_family": {
+      "dotprod": 8160,
+      "i8mm": 7776
+     },
+     "total_hits": 15936,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 6.27
+    },
+    {
+     "threads": 8,
+     "workload": "decode_short",
+     "advertised_L2": "I8MM",
+     "executed_L3": "dotprod",
+     "hits_by_family": {
+      "dotprod": 16320,
+      "i8mm": 15552
+     },
+     "total_hits": 31872,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 11.3
+    },
+    {
+     "threads": 16,
+     "workload": "decode_short",
+     "advertised_L2": "I8MM",
+     "executed_L3": "dotprod",
+     "hits_by_family": {
+      "dotprod": 26352,
+      "i8mm": 24864
+     },
+     "total_hits": 51216,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 14.35
+    },
+    {
+     "threads": 1,
+     "workload": "prefill_long",
+     "advertised_L2": "I8MM",
+     "executed_L3": "i8mm",
+     "hits_by_family": {
+      "dotprod": 12,
+      "i8mm": 648
+     },
+     "total_hits": 660,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 7.93
+    },
+    {
+     "threads": 2,
+     "workload": "prefill_long",
+     "advertised_L2": "I8MM",
+     "executed_L3": "i8mm",
+     "hits_by_family": {
+      "dotprod": 96,
+      "i8mm": 5184
+     },
+     "total_hits": 5280,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 6.45
+    },
+    {
+     "threads": 4,
+     "workload": "prefill_long",
+     "advertised_L2": "I8MM",
+     "executed_L3": "i8mm",
+     "hits_by_family": {
+      "dotprod": 192,
+      "i8mm": 10368
+     },
+     "total_hits": 10560,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 6.95
+    },
+    {
+     "threads": 8,
+     "workload": "prefill_long",
+     "advertised_L2": "I8MM",
+     "executed_L3": "i8mm",
+     "hits_by_family": {
+      "dotprod": 384,
+      "i8mm": 20736
+     },
+     "total_hits": 21120,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 9.61
+    },
+    {
+     "threads": 16,
+     "workload": "prefill_long",
+     "advertised_L2": "I8MM",
+     "executed_L3": "i8mm",
+     "hits_by_family": {
+      "dotprod": 744,
+      "i8mm": 33152
+     },
+     "total_hits": 33896,
+     "verdict": "I8MM_HYBRID_DISPATCH",
+     "wall_time_sec": 10.44
+    }
+   ],
+   "interpretation": "L1=10 (dotprod:6, i8mm:2, sve:2) predicts L3 should be able to observe dispatch. It does, on all 10 swept configs (486 to 33,152 total hits), never zero. Notably the 2 compiled-in SVE-family symbols get ZERO L3 hits in every single config -- this independently reproduces, on the actual DGX Spark hardware (previously flagged '[not measured on Spark]' in results/GROUND-TRUTH-DISPATCH.md), the SVE-width-gate finding measured on the Neoverse-N2 CI lane: 128-bit SVE2 cannot satisfy KleidiAI's `ggml_cpu_get_sve_cnt() == QK8_0` (256-bit) gate, so the SVE kernel family is compiled in but structurally unreachable, and the i8mm/dotprod families run instead. This is a side finding, not the task's primary deliverable, but it is real data produced in the course of this cross-validation and is worth folding into results/GROUND-TRUTH-DISPATCH.md in a follow-up."
+  },
+  "directional_agreement": {
+   "verdict": "YES -- directional agreement holds, in the one dimension the two available signals (L1, L3) can jointly express: zero static symbols -> L3 cannot observe any dispatch (fails closed rather than reporting a fabricated zero); ten static symbols -> L3 observes large, consistently nonzero dispatch counts across every one of 10 swept configurations, scaling with thread count as expected (roughly linear in decode_short: ~1000 -> ~51,000 hits from 1 to 16 threads).",
+   "caveat": "This is L1-vs-L3 agreement, NOT the PMU-vs-L3 agreement the task requested. It is offered as the strongest evidence actually obtainable on this hardware under this session's privileges, not as a substitute claim of PMU validation. The PMU side of the requested comparison is explicitly UNMEASURED -- see pmu_availability."
+  }
+ },
+ "overhead_measurement": {
+  "method": "Round-robin interleaved A,B,A,B,A,B,A,B,A,B (5 reps per arm, per this project's mandated interleaving rule). A = plain llama-cli run, no debugger. B = the same run under tools/verify_dispatch.py's real L3 gdb probe (run_l3_gdb, imported and called directly, not reimplemented).",
+  "config": {
+   "binary": "~/polygraph-server-lane/llama.cpp/build-fixed/bin/llama-cli",
+   "model": "q05.gguf (Qwen2.5-0.5B-Instruct-Q4_0)",
+   "threads": 4,
+   "workload": "decode_short (prompt \"Hello.\", n_predict=4)"
+  },
+  "sequence_order": "A,B,A,B,A,B,A,B,A,B",
+  "plain_wall_times_sec": [
+   1.2056,
+   1.4003,
+   1.2047,
+   1.1897,
+   1.2184
+  ],
+  "l3_gdb_wall_times_sec": [
+   5.1352,
+   2.4536,
+   4.7746,
+   4.1221,
+   4.379
+  ],
+  "plain_median_sec": 1.2056,
+  "l3_gdb_median_sec": 4.379,
+  "plain_spread_sec": 0.2106,
+  "l3_gdb_spread_sec": 2.6816,
+  "plain_stdev_sec": 0.0881,
+  "l3_gdb_stdev_sec": 1.0355,
+  "overhead_multiplier_median": 3.63,
+  "note": "L3's total_hits was identical (15936) across all 5 B reps, confirming determinism of the dispatch count itself even though wall-clock varies substantially (2.45s-5.14s) run to run under gdb -- the debugger's own scheduling/attach overhead is the dominant source of that spread, not the measured program's behavior. This 3.63x median overhead is for a SHORT (4-token) workload with 15,936 breakpoint hits; per-hit overhead should amortize better on shorter or longer workloads with fewer or more hits respectively, but that was not separately measured here."
+ },
+ "interpretation": {
+  "established": [
+   "On this specific DGX Spark, unprivileged perf_event access to hardware AND software events is blocked outright by perf_event_paranoid=4, with no privilege-escalation path available in this session.",
+   "Independent of privilege, this box's kernel PMU driver (armv8_pmuv3_0, kernel 6.17.0-1021-nvidia) does not enumerate SVE- or SME/ASE-class instruction-mix events at all -- only the common ARMv8 PMUv3 event set (cycles, cache, TLB, branch, stall, and one undifferentiated inst_spec counter) is registered. This is a genuine, literal confirmation of the prior-art table's own caveat ('the events are frequently unavailable in containers and VMs') extended to a case that is neither: bare-metal hardware, just a hardened default plus a driver/firmware event set that never exposed the finer-grained codes.",
+   "The project's own L1 (static symbol) and L3 (debugger dispatch) layers were exercised on this real hardware, on the exact two builds and workloads referenced elsewhere in this repo, and agree with each other directionally: 0 static symbols -> L3 refuses to run (fail-closed); 10 static symbols -> L3 observes large, consistently nonzero, thread-scaling dispatch counts on all 10 configs.",
+   "L3's dispatch hit counts confirm, on real Spark silicon, the previously CI-only (Neoverse-N2) finding that KleidiAI's SVE kernel family is compiled in (2 symbols present) but never dispatches (0 hits in all 10 configs) because this core's 128-bit SVE2 cannot satisfy the `== QK8_0` (256-bit) selection gate -- upgrading that specific claim from '[not measured on Spark]' to measured.",
+   "L3's overhead relative to an undebugged run was directly measured with mandated round-robin interleaving: median 3.63x wall-clock slowdown (1.21s -> 4.38s) on a short, 15,936-breakpoint-hit workload, with substantial run-to-run spread under gdb (2.68s spread vs 0.21s spread for the plain run) even though the dispatch count itself is exactly reproducible."
+  ],
+  "not_established": [
+   "Whether Arm PMU instruction-class counters (SVE_INST_SPEC, ASE_INST_SPEC or equivalent) agree directionally with L3 on this hardware. This is the task's primary question and it is UNANSWERED here, not answered affirmatively or negatively -- the measurement could not be taken at all, for the two independent reasons in pmu_availability.",
+   "Whether raw (non-symbolic) PMU event codes for SVE/ASE instruction classes would work on this box if privilege were available -- not tested, since perf_event_paranoid=4 blocks perf_event_open() for ANY event type (symbolic or raw) at this privilege level, so there was nothing further to learn by trying a raw code with the same denied privilege.",
+   "Whether a root/CAP_PERFMON session on this SAME box would find the SVE/ASE event codes present via raw hex (bypassing the symbolic alias directory) -- plausible in principle (the perf-events kernel API sometimes accepts raw codes the sysfs alias directory doesn't list by name) but genuinely unknown; would require an interactive session with sudo access to test, which this automated session did not have.",
+   "Whether L3's ~3.6x overhead figure generalizes beyond the one (threads=4, decode_short, 15,936-hit) configuration measured -- only one configuration was interleaved-timed, per the task's compute/time budget; the overhead measurement is real but narrow in scope."
+  ],
+  "honest_summary": "The requested PMU-vs-L3 cross-validation could not be performed on this hardware: this specific DGX Spark blocks unprivileged perf_event access outright (perf_event_paranoid=4, no escalation path in this session) AND its kernel PMU driver does not expose SVE/SME/ASE-class symbolic events regardless of privilege. That is itself the strongest evidence obtainable here for the debugger-based (L3) approach's practical case: on a real, non-virtualized, non-containerized Arm box actually available to this project, the 'free, no-code' PMU path the prior-art review pointed to was not usable, while L3 (a debugger attaching to a process the user already owns) worked, produced deterministic dispatch counts, and even surfaced a new confirmed finding (the SVE-width-gate result, now verified on Spark hardware rather than only CI). The L3-vs-PMU agreement question itself remains open and should be retried on a box with looser perf_event_paranoid and/or root access before any directional-agreement claim is made in the README or docs."
+ },
+ "review_note": "Reviewed and committed 2026-08-05. The host name in uname -a is redacted; the kernel version, architecture and CPU model are kept because they are load-bearing for the finding. No routable hostname for this machine appears anywhere in this repository."
+}

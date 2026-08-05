@@ -236,3 +236,62 @@ build's claimed accelerated kernel actually ran**, aimed at people compiling for
 Arm silicon and at release pipelines that want a regression gate — not at end users of
 `ollama run`. This is a smaller claim than "an accelerator for local LLMs," and it is the one the
 measurements support.
+
+---
+
+## Defensibility: what is available, and what was already given away
+
+*Added 2026-08-05, after asking whether this work could be made unique, private, or patentable.*
+
+Three constraints were checked against primary sources before considering any strategy, and two of
+them had already decided the question.
+
+**1. The contest forbids it.** The Official Rules state: *"The repository must be public and open
+source by including an open source license file"* (MIT or Apache 2.0), available *"for testing,
+evaluation and use by the Sponsor, Administrator and Judges until the Judging Period ends"* —
+2026-09-04 16:00 PT. Going private is a rules violation, not an option. The rules also confirm the
+upside: *"All Submissions remain the intellectual property of the individuals or organizations
+that developed them."* The sponsor receives only a non-exclusive licence for judging plus
+promotional rights.
+
+**2. Apache-2.0 already granted it away, irrevocably.** This repo has been public under Apache-2.0
+since its first commit (`c8834e4`, 2026-08-04 06:37:38 +0800). Section 2 grants every recipient a
+*"perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license"*,
+and **Section 3 grants a patent licence on the same terms**, covering *"those patent claims
+licensable by such Contributor that are necessarily infringed by their Contribution(s)"*. A patent
+filed later on the mechanism as published here would already be licensed to anyone using this
+code — that is, to precisely the population a patent would be meant to restrain. Making the repo
+private cannot retract either grant from anyone who already holds a copy.
+
+**3. The technique is not novel.** See
+[`docs/PRIOR-ART-AND-ALTERNATIVES.md`](PRIOR-ART-AND-ALTERNATIVES.md). Pending breakpoints and a
+non-halting `stop()` counter are documented GDB/LLDB features; `bpftrace` uprobes answer the same
+question with lower overhead and without the `dlopen` ordering problem; Arm's own
+`SVE_INST_SPEC` PMU counter answers the hardware-level version with no code at all.
+
+Patent rights outside the US were extinguished by publication before filing — the EPC (Art. 54/55)
+and China (Patent Law Art. 24) apply absolute novelty with no self-disclosure grace period. The US
+retains a §102(b)(1)(A) one-year window from first disclosure, but combined with the Apache-2.0 §3
+grant and the prior art above, the honest expected value is negative. *(Research, not legal
+advice.)*
+
+### What is left, and it is not nothing
+
+The scored rubric for this contest is Technological Implementation 40, "WOW" factor 25, Potential
+Impact 20, Developer Experience 15. **No criterion rewards defensibility.** What the rubric
+rewards is what this project should therefore optimise, and it happens to coincide with the only
+durable advantages actually available:
+
+- **Being the credible first discloser, with receipts.** Upstream issue #26547 is filed and dated.
+- **A published record of self-correction.** This project retracted a fabricated +57.3% figure and
+  later published that its own headline shrank from 4.56x to 1.33x at a realistic model size.
+  In benchmarking, that record is the asset. Secrecy would destroy the thing that makes it worth
+  anything.
+- **The accumulated measurement corpus.** One verified configuration today. Every additional
+  (silicon x compiler x engine x flags) record is one a competitor must re-measure on real
+  hardware to match. This is the Phoronix/MLCommons shape: the moat is the corpus, not the
+  harness. It takes months, not days.
+- **Verification of the verifier.** The ground-truth harnesses and the claims registry are
+  discipline rather than code, and are the least convenient part to copy.
+
+The mechanism was never the moat. Being right, in public, repeatedly, is.
