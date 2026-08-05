@@ -160,3 +160,79 @@ following would need to be measured, not assumed:
 
 Until those are answered, what ships is the verifier and the method it demonstrates — not a
 promise about how large the win will be on hardware nobody here has measured yet.
+
+---
+
+## The third framing, tested and rejected: "an accelerator for Ollama / llama.cpp / vLLM"
+
+*Added 2026-08-05, after the verifier framing was judged unattractive twice.*
+
+The proposal was to reposition this project as a fundamental tool that speeds up local LLM
+inference across engines. The whole thesis rested on one number nobody had measured: **prevalence**
+— specifically, whether the binaries ordinary users download carry the Finding 3 defect. Finding 3
+was measured on a build *we* compiled. The product claim is about builds *other people* compiled.
+Those are different populations, and the gap had never been tested.
+
+It has now been tested, and the answer is no.
+
+### The decisive measurement
+
+Official `llama.cpp` release `b10276`, `ubuntu-arm64` archive, all eight runtime-dispatch variants:
+
+| library | `kai_*` symbols | ggml repack matmul kernels |
+|---|---|---|
+| `libggml-cpu-armv8.0_1.so` … `libggml-cpu-armv9.2_2.so` (8 files) | **0** | **present in all 8** |
+
+Zero KleidiAI symbols — **and that is not a defect.** Each variant carries ggml's own
+`ggml::cpu::repack::tensor_traits<block_q4_0, ...>` matmul kernels, and the binary exports
+`ggml_cpu_has_dotprod`, `ggml_cpu_has_matmul_int8`, `ggml_cpu_has_sve`, `ggml_cpu_has_sme`,
+`ggml_cpu_has_sme2`. The release is built with `-DGGML_CPU_ALL_VARIANTS=ON`, which compiles one
+library per ISA tier and selects at load time. The shipped binary is ISA-dispatched and
+accelerated; it simply does not route through KleidiAI.
+
+**`GGML_CPU_KLEIDIAI` defaults to OFF, and neither llama.cpp's nor Ollama's release CI ever turns
+it on.** So there is no advertised-vs-executed gap in a stock install: the banner correctly says
+KleidiAI is off, because it is off. The failure this project detects — a banner claiming
+`KLEIDIAI = 1` over a binary with no KleidiAI kernels — cannot occur in a stock install at all.
+
+### Why the "zero symbols means free speed on the table" reading is wrong
+
+An earlier working hypothesis in this project was that a `kai_*` count of zero on a shipped binary
+implied unexploited hardware, and therefore a large recoverable speed-up for every Arm user. The
+symbol table above refutes it directly: **zero KleidiAI symbols is not zero acceleration.** The
+comparison that would justify the product claim is "shipped binary vs. best possible build", and
+the shipped binary already carries per-ISA repack kernels. The 4.57x in
+`results/scale/scale-experiment.json` is measured against a *broken* build, not against the
+official release, and must not be quoted as headroom available to a stock user.
+
+### What Finding 3 actually requires
+
+Three conditions simultaneously, none of them defaults: a **native** build (not the portable
+`GGML_CPU_ALL_VARIANTS` mode every official release uses), a manually-passed
+`-DGGML_CPU_KLEIDIAI=ON`, and a compiler whose Arm CPU-name table predates the specific core
+(gcc 13.3.0 shipped 2024-05-21; `cortex-x925` was backported only in November 2024). The exposed
+population is people hand-building llama.cpp for new Arm silicon — real, but small, and expert.
+
+### What else the review found
+
+- **The mechanism is being fixed upstream, for free, on a visible timeline.** An Arm-affiliated
+  engineer opened a three-PR series reworking KleidiAI build integration and adding runtime
+  feature detection on 2026-07-24 — the exact code path Finding 3 exploits.
+- **No demand signal.** No issue in `ollama/ollama` mentions KleidiAI.
+- **A tempting piece of evidence does not hold.** Ollama issue #13860 — a real 3–10x arm64
+  slowdown affecting a Pi 5 and three Qualcomm SoCs for roughly a month — was a missing `-O3`
+  CGO flag, not a dispatch failure. The same kernels ran before and after, so this project's
+  method would most likely have shown **identical** results across that regression. It must not
+  be cited as a case this tool would have caught.
+- **vLLM does not share the mechanism.** Its Arm CPU path uses oneDNN + Arm Compute Library and
+  no KleidiAI, and its dominant path is GPU, where L3's `gdb`/`lldb` breakpoint technique does not
+  transfer. "One tool for three engines" is architecturally false: Ollama vendors llama.cpp
+  (one mechanism, not two), and vLLM is a third, unrelated stack.
+
+### The conclusion
+
+The verifier framing stands, narrowed and stated precisely: **a CI gate that proves whether a
+build's claimed accelerated kernel actually ran**, aimed at people compiling for new or unusual
+Arm silicon and at release pipelines that want a regression gate — not at end users of
+`ollama run`. This is a smaller claim than "an accelerator for local LLMs," and it is the one the
+measurements support.

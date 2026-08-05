@@ -1,0 +1,65 @@
+{
+ "schemaVersion": "polygraph.prevalence.v1",
+ "measured": "2026-08-05",
+ "question": "Do the binaries ordinary users download carry the Finding 3 defect?",
+ "answer": "No. GGML_CPU_KLEIDIAI is OFF in official release builds, so the banner correctly reports it off. There is no advertised-vs-executed gap in a stock install.",
+ "artifact": {
+  "project": "ggml-org/llama.cpp",
+  "release": "b10276",
+  "archive": "llama-b10276-bin-ubuntu-arm64.tar.gz",
+  "build_flags_from_release_yml": "-DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON  (no KLEIDIAI flag)"
+ },
+ "method": "nm -D on every runtime-dispatch variant in the shipped archive; counts are literal grep counts of the dynamic symbol table.",
+ "variants": [
+  {
+   "library": "libggml-cpu-armv8.0_1.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "79f9a0f1fceba9be"
+  },
+  {
+   "library": "libggml-cpu-armv8.2_1.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "48771b29e90b64a8"
+  },
+  {
+   "library": "libggml-cpu-armv8.2_2.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "497ca11805c139f6"
+  },
+  {
+   "library": "libggml-cpu-armv8.2_3.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "5ec3d55ffdbbb857"
+  },
+  {
+   "library": "libggml-cpu-armv8.6_1.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "e7507ffc78c458d2"
+  },
+  {
+   "library": "libggml-cpu-armv8.6_2.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "24ea207edeabcfda"
+  },
+  {
+   "library": "libggml-cpu-armv9.2_1.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "0e3eea2e3402feeb"
+  },
+  {
+   "library": "libggml-cpu-armv9.2_2.so",
+   "kai_symbols": 0,
+   "repack_matmul_symbols": 204,
+   "sha256": "41fa32fcc7a287d8"
+  }
+ ],
+ "interpretation": "Zero KleidiAI symbols is NOT zero acceleration. Every variant carries ggml's own ggml::cpu::repack matmul kernels and the binary exports ggml_cpu_has_{dotprod,matmul_int8,sve,sme,sme2}. GGML_CPU_ALL_VARIANTS=ON compiles one library per ISA tier and selects at load time. The 4.57x prefill figure in results/scale/scale-experiment.json is measured against a BROKEN build, not against this official release, and must not be quoted as headroom available to a stock user.",
+ "consequence": "Finding 3 requires three simultaneous non-default conditions: a native build (not the portable GGML_CPU_ALL_VARIANTS mode releases use), a manually-passed -DGGML_CPU_KLEIDIAI=ON, and a compiler whose Arm CPU-name table predates the core. The exposed population is source-builders on new Arm silicon."
+}
