@@ -35,6 +35,16 @@ found first, and what this project adds on top — see
 **[`docs/RELATED-WORK.md`](docs/RELATED-WORK.md)**, and read it before assuming either finding here
 is uncontested.
 
+**New (measured 2026-08-05): the most user-impactful finding yet, and the project's first
+server-class evidence.** Following `llama.cpp`'s own documented KleidiAI build line on a DGX Spark
+(Cortex-X925, 20-core Armv9.2 server silicon) produces a binary with **zero working matmul
+micro-kernels** — while the startup banner still prints `KLEIDIAI = 1` and the build exits `0`. One
+flag pair fixes it — see **Finding 3**, below. Rebuilt correctly, that same server sustains
+**~29.6x** aggregate throughput scaling from 1 to 16 concurrent `llama-server` clients (14.9 →
+440.4 tok/s) — this project's first inference-server (Cloud-AI) measurements, including
+time-to-first-token, memory, and a second-platform dispatch confirmation of Finding 2 under real
+serving load. Full tables and methodology: **"Cloud AI: measured on server-class Arm"**, below.
+
 **The optimization, re-measured 2026-08-04 on this repo's own hardware (Apple M4 Max, `llama-bench
 -r 1`, n=7, round-robin interleaved against external load, median ± stdev — full table below):**
 matching thread count to phase — `-t 2` for decode, `-t 8`/`-tb 8` for prefill, both flags
@@ -111,7 +121,17 @@ about most of them.
 
 ---
 
-## The two findings
+## Evidence platforms at a glance
+
+| Platform | Class | Cores | ISA path measured | What it backs |
+|---|---|---:|---|---|
+| Apple M4 Max (macOS) | Laptop/desktop SoC | 16 | SME2 | Finding 1, the Apple M4 Max measured results, the optimization + patch |
+| Cortex-X925 / DGX Spark | Server-class Arm, Armv9.2 | 20 | SVE2 (128-bit) → I8MM/DOTPROD | Finding 2 (now dispatch-confirmed), Finding 3, the Cloud AI server lane |
+| Neoverse-N2 | Free, judge-reproducible CI (`ubuntu-24.04-arm`) | `[not measured]` | SVE2 (128-bit) | Finding 2's zero-cost, judge-reproducible static (L1) path |
+
+---
+
+## The three findings
 
 ### Finding 1 — SME2 is gated by a hardcoded per-chip thread cap, with a batch-size-dependent hybrid rescue path
 
@@ -198,15 +218,82 @@ i8mm, and bf16.** Any current Arm core shipping 128-bit SVE2 (which is most of t
 is still rare outside HPC-class silicon) hits the same wall.
 
 **Status:** read from source and confirmed by static analysis (`tools/verify_dispatch.py`'s L1
-tier); **not yet confirmed by an L3 dispatch trace on real SVE2 hardware** — the DGX Spark CI lane
-(`.github/workflows/verify-spark-aarch64.yml`) exists to do exactly that but has not completed a
-clean run yet (see Limitations). Treat this finding as `[architecturally derived, dispatch-level
-confirmation pending]` until that lane is green.
+tier). **Now also confirmed at the L3 (dispatch) tier, on real SVE2 hardware:** a manual `gdb` trace
+against a live `llama-server` process on the DGX Spark (Cortex-X925, `SVE_CNT = 16` — 128-bit)
+recorded zero SVE-family dispatch under concurrent serving load — only `dotprod` (11,360 calls) and
+`i8mm` (364,444 calls) — see **"Cloud AI: measured on server-class Arm"** below for the full trace
+and methodology. That confirmation came from a direct, manual measurement on the Spark hardware,
+**not** from the automated `.github/workflows/verify-spark-aarch64.yml` CI lane, which remains
+`continue-on-error` and has still not completed a clean run (see Limitations) — the two are
+independent, and only the manual measurement has produced real L3 evidence so far.
 
 **Prior art:** this exact mechanism — the same `kleidiai.cpp:209` line, the same `QK8_0`-equality
 gate — was published two days before this repository existed by a different, unrelated project.
 We found it independently, later, and are not claiming priority. Full disclosure, dates, and what
 this project adds beyond that prior work: [`docs/RELATED-WORK.md`](docs/RELATED-WORK.md).
+
+### Finding 3 — `llama.cpp`'s documented KleidiAI build line silently ships zero acceleration on Cortex-X925
+
+Following `llama.cpp`'s own documented build line, on the DGX Spark:
+
+```bash
+cmake -S . -B build -DGGML_CPU_KLEIDIAI=ON -DCMAKE_BUILD_TYPE=Release
+```
+
+produces a binary with **zero `kai_run_matmul` symbols** — none of KleidiAI's matmul micro-kernels
+compile in at all; only the packing helpers (`kai_lhs_quant_pack_*`, `kai_rhs_pack_*`) are present.
+The startup banner does not say so (`results/server/spark-provenance.txt`):
+
+```
+system_info: ... | NEON = 1 | ARM_FMA = 1 | LLAMAFILE = 1 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 |
+kleidiai: no compatible q4 kernels found for CPU features mask 0
+kleidiai: no compatible q8 kernels found for CPU features mask 0
+kleidiai: no compatible f32 kernels found for CPU features mask 0
+```
+
+**`KLEIDIAI = 1` prints on the same run whose own log admits the CPU feature mask is `0`** — and
+`SVE`, `DOTPROD`, and `MATMUL_INT8` have all silently dropped out of the banner entirely rather than
+printing as disabled. The build exits `0`. Reading only L2 (the selection-time log, in this
+project's own terminology from "Why this matters" above) would conclude KleidiAI is active; it is
+compiled with zero working matmul kernels.
+
+**Root cause:** on this machine (`gcc 13.3.0`, Ubuntu 24.04 aarch64 —
+`results/server/spark-provenance.txt`), `llama.cpp`'s `CMakeLists.txt` logs "ARM -march/-mcpu not
+found, -mcpu=native will be used," then probes for CPU features by appending flags —
+`-mcpu=native+dotprod`, `-mcpu=cortex-x925`, and others — to `-mcpu=native`. This `gcc` rejects
+every one of those probes, including the *negative* controls (a probe that checks a feature is
+*absent* also fails) — the tell that the probing logic itself is broken, not that the hardware lacks
+the feature. `-march=armv9.2-a+i8mm` compiles cleanly on the same toolchain, confirming the CPU
+support is real.
+
+**The fix is one flag pair:**
+
+```
+-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH="armv9.2-a+sve2+i8mm+bf16+dotprod"
+```
+
+Rebuilt with that pair, the same source tree and toolchain produce **10 `kai_run_matmul` symbols**
+(`results/server/spark-provenance.txt`) and a banner that matches reality:
+
+```
+system_info: ... | NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 |
+kleidiai: primary q4 kernel feature I8MM
+kleidiai: primary q8 kernel feature I8MM
+kleidiai: no compatible f32 kernels found for CPU features mask 3
+```
+
+`f32` still has no compatible kernel even in the fixed build — the flag pair does not fix every code
+path, and this document does not pretend it does.
+
+**Why this is arguably the most user-impactful finding in this project.** Findings 1 and 2 are about
+*which* accelerated kernel a working build selects. Finding 3 is a build that ships **no**
+accelerated matmul kernel at all, produced by following `llama.cpp`'s own documented instructions,
+while every signal a user would normally check — a `0` exit code and a `KLEIDIAI = 1` banner line —
+says it worked.
+
+**Status:** measured directly on this machine. Both the broken default build and the fixed rebuild
+were compiled and run on the same DGX Spark in the same session
+(`results/server/spark-provenance.txt`), not derived from source alone.
 
 ---
 
@@ -282,6 +369,70 @@ cannot express. Full reconciliation with every caveat: `results/SUMMARY.md` §4.
 `prefill_short` was never independently `lldb`-verified in this session (inferred from the on/off
 throughput ratio only); 16-thread cells have stddev comparable to or exceeding their own median and
 should be read as "this regime is unstable," not a precise point estimate.
+
+---
+
+## Cloud AI: measured on server-class Arm (DGX Spark, Cortex-X925, 20 cores)
+
+Everything above this section other than Finding 3 was measured on a single Apple laptop. For the
+Arm Create: AI Optimization Challenge's Track 2 (Cloud AI) focus areas, this lane closes a real gap:
+before it, this repository had no inference-server-speed measurement, no time-to-first-token figure,
+and no memory figure anywhere in it. This section is the project's first server-class,
+concurrent-serving evidence: `llama-server` with continuous batching (`-cb`),
+`Qwen2.5-0.5B-Instruct-Q4_0`, 3 rounds per row, median reported, built with the Finding 3 fix above
+(`-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod`) so the server is actually
+running an accelerated kernel rather than the silently-broken default. Raw data:
+`results/server/server-bench.json`, `results/server/server-dispatch.json`,
+`results/server/spark-provenance.txt`.
+
+### Throughput, time-to-first-token, and memory
+
+| parallel | threads | clients | aggregate tok/s | TTFT p50 | TTFT p99 | peak RSS |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1  | 20 | 1  |  14.9 | 0.089s | 0.089s | 724 MiB |
+| 4  | 20 | 4  |  56.6 | 0.092s | 0.221s | 761 MiB |
+| 8  | 20 | 8  | 271.8 | 0.062s | 0.117s | 809 MiB |
+| 8  |  4 | 8  | 264.8 | 0.062s | 0.094s | 809 MiB |
+| 16 | 20 | 16 | 440.4 | 0.120s | 0.168s | 901 MiB |
+
+All 5 configurations, 3 rounds each, 0 errors in any row (`results/server/server-bench.json`).
+
+**Reading (a) — concurrency scales, and latency/memory stay disciplined at the edges of the sweep.**
+Aggregate throughput scales from 14.9 tok/s at 1 client to 440.4 tok/s at 16 concurrent clients
+(**~29.6x**), and peak memory grows only 724 → 901 MiB across that same range. TTFT p99 at those two
+endpoints — 0.089s and 0.168s — is comfortably under 170ms, though the sweep is not perfectly
+monotonic: the interior `parallel=4` row spikes to 0.221s TTFT p99, the highest value in the whole
+table, before `parallel=8` and `parallel=16` both settle back down. That non-monotonic middle point
+is real and left in the table rather than smoothed over.
+
+**Reading (b) — the honest counterweight to this repo's own thread-tuning story.** At `parallel=8`,
+dropping `--threads` from 20 to 4 costs almost nothing — 271.8 vs 264.8 tok/s — and TTFT p99 actually
+*improves*, 0.117s → 0.094s. The single-user thread-count sensitivity that drives this document's
+entire "match thread count to phase" story above (`-t 2` vs. default being a 3.43x swing on M4 Max
+decode) **largely disappears once continuous batching is doing the work**: under concurrent serving
+the server is batch-bound, not thread-bound. This is a genuinely different regime from the
+single-user decode/prefill story above, presented here as the honest counterweight it is, not folded
+into those numbers as if they were the same claim.
+
+### Finding 2, confirmed on a second core family, under real load
+
+The fixed build's own banner already carries the L2 (selection) signal Finding 2 predicts for
+128-bit SVE2 hardware: `SVE_CNT = 16` (128-bit) and `kleidiai: primary q4 kernel feature I8MM` — I8MM
+selected, not SVE, exactly as `kleidiai.cpp:209`'s `QK8_0`-exact-equality gate requires. This server
+lane supplies the L3 (dispatch) confirmation Finding 2's status note above says was still pending:
+`gdb` was attached to a live `llama-server` process with breakpoints on all 10 `kai_run_matmul`
+symbols from the fixed build, driven by 8 concurrent clients (the same `parallel=8` configuration as
+the table above). The resulting dispatch tally (`results/server/server-dispatch.json`):
+
+```json
+{"dotprod": 11360, "i8mm": 364444}
+```
+
+Two accelerated families, zero `sve` entries at all — under real concurrent serving load, on real
+SVE2-capable hardware, the SVE kernel family is never entered, matching Finding 2's prediction. The
+shape also inverts versus the M4 Max's single-user decode numbers earlier in this document:
+continuous batching turns GEMV into GEMM, so batched serving here is overwhelmingly `i8mm` (364,444
+calls) rather than the `dotprod`-leaning shape a GEMV workload would produce.
 
 ---
 
@@ -585,6 +736,11 @@ live, unresolved incident on this project's own Spark runner where the kernel ki
 process (suspected OOM) for reasons unrelated to this repo. Treat this lane as best-effort, never
 as a gate.
 
+**If the documented `-DGGML_CPU_KLEIDIAI=ON` build line yields a binary with zero
+`kai_run_matmul` symbols on your box, that isn't your setup — see Finding 3 above.** Add
+`-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH="armv9.2-a+sve2+i8mm+bf16+dotprod"` to `cmake` (adjusted for
+your core's actual SVE2/i8mm/bf16/dotprod support) and rebuild.
+
 ### Manual `llama-cli` invocation (for exploring dispatch by hand)
 
 ```bash
@@ -623,10 +779,28 @@ non-TTY stdin.
   re-verified on an M4/M4 Pro/M4 Ultra (the other rows of the hardcoded brand-string table), and
   the base `"M4"` and `"M4 Pro"`/`"M4 Ultra"` cap values are read from source, not independently
   measured on that specific silicon.
-- **Finding 2 is architecturally derived, not yet dispatch-confirmed.** The `QK8_0`-equality gate
-  is read directly from source and matches the DGX Spark's documented 128-bit SVE2 width, but this
-  session did not obtain a clean `lldb`/`gdb` L3 trace on real SVE2 hardware — the Spark CI lane
-  exists for this and has not completed a full run yet.
+- **Finding 2 is now dispatch-confirmed on real SVE2 hardware, but by a manual measurement, not
+  the automated CI lane.** A manual `gdb` trace against a live `llama-server` process on the DGX
+  Spark (`results/server/server-dispatch.json`) recorded zero SVE-family calls — only `dotprod`
+  (11,360) and `i8mm` (364,444) — under concurrent serving load, matching the `QK8_0`-equality
+  gate's prediction for 128-bit SVE2. The self-hosted `.github/workflows/verify-spark-aarch64.yml`
+  CI lane meant to produce this automatically still has not completed a clean run (a separate,
+  unresolved OOM incident on that runner) — this confirmation stands on its own measurement, not on
+  that lane going green.
+- **Finding 3 (the broken default KleidiAI build on the DGX Spark) has not been reported
+  upstream.** Unlike Findings 1 and 2 (filed as
+  [ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)), the build-flag
+  issue diagnosed here is new as of this session and has not yet been written up as a separate
+  upstream issue or doc fix.
+- **The Cloud AI server sweep (`results/server/server-bench.json`) is single-machine,
+  single-model.** All five rows use `Qwen2.5-0.5B-Instruct-Q4_0` on one DGX Spark, built with the
+  Finding 3 fix; TTFT and throughput at a larger model, a larger batch size, or another quantization
+  are `[not yet measured]`. The `parallel=4` row's TTFT p99 (0.221s) is the least favorable point in
+  the sweep and is not smoothed over in the readings above.
+- **Finding 3's build-flag diagnosis is one gcc/toolchain combination.** It was diagnosed and fixed
+  against `gcc 13.3.0` on Ubuntu 24.04 aarch64 (`results/server/spark-provenance.txt`); whether the
+  same `-mcpu=native+<feature>` probe failure reproduces on other gcc versions, `clang`, or other Arm
+  server cores is `[not yet measured]`.
 - **Single model.** All throughput numbers are `Qwen2.5-0.5B-Instruct`, `Q4_0` only. `Q8_0` is
   `[not available]` — no such GGUF existed in this environment, and none was fabricated by
   up-converting the lossy `Q4_0` file.

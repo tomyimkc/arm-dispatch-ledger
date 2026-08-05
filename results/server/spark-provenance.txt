@@ -1,0 +1,20 @@
+host: spark-2f2d | Linux 6.17.0-1021-nvidia aarch64 | cores 20 | mem 121GiB
+  Architecture:                            aarch64
+  Model name:                              Cortex-X925
+  Model name:                              Cortex-A725
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+llama.cpp: dbadb68ee ggml: use dynamic allocation for split graph inputs (#22789)
+
+[DEFAULT BUILD: cmake -DGGML_CPU_KLEIDIAI=ON]
+  kai_run_matmul symbols: 0
+  0.00.003.152 I cmn  common_param: system_info: n_threads = 4 (n_threads_batch = 4) / 20 | CPU : NEON = 1 | ARM_FMA = 1 | LLAMAFILE = 1 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | 
+  0.00.157.402 I kleidiai: no compatible q4 kernels found for CPU features mask 0
+  0.00.157.402 I kleidiai: no compatible q8 kernels found for CPU features mask 0
+  0.00.157.402 I kleidiai: no compatible f32 kernels found for CPU features mask 0
+
+[FIXED BUILD: + -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod]
+  kai_run_matmul symbols: 10
+  0.00.003.065 I cmn  common_param: system_info: n_threads = 4 (n_threads_batch = 4) / 20 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 | SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 | 
+  0.00.164.278 I kleidiai: primary q4 kernel feature I8MM
+  0.00.164.278 I kleidiai: primary q8 kernel feature I8MM
+  0.00.164.279 I kleidiai: no compatible f32 kernels found for CPU features mask 3

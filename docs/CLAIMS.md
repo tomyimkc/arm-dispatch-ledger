@@ -159,6 +159,48 @@ unnoticed without a mechanical gate. That the gate found them on its first run, 
 a repo that had already been carefully hand-reviewed multiple times, is the argument for
 building it.
 
+## New in this update: DGX Spark server lane (2026-08-05)
+
+`results/server/` adds three files -- `server-bench.json`, `server-dispatch.json`, and
+`spark-provenance.txt` -- measured on a second machine (NVIDIA DGX Spark, GB10,
+Cortex-X925/Cortex-A725, gcc 13.3.0, aarch64). All three are additive; no existing
+`results/` artifact was edited (see `results/RENAME-NOTE.md`'s "don't touch prior
+evidence" ethos, applied here to a different concern -- a new lane, not a rename). Every
+server-lane claim added to the registry below cites one of those three files as
+`source_file`, and most cite an exact `source_json_path` into `server-bench.json` or
+`server-dispatch.json` rather than a bare substring match, since those two files are JSON,
+not prose.
+
+Two things this pass deliberately did **not** register or overstate, found by reading the
+committed files directly instead of trusting a session summary of them (per this
+project's own no-overclaim discipline):
+
+- **`sve: 0` dispatch calls under concurrent serving load is documented in prose, not
+  registered as a machine-checked numeric claim.** `results/server/server-dispatch.json`
+  contains exactly two keys (`dotprod`, `i8mm`); `sve` is entirely absent -- zero is the
+  correct reading, but it is an absence, not a literal `0` JSON leaf. A registry entry
+  with `value_text: "0"` against that file would only "pass" this tool's substring check
+  by coincidence (almost any file with enough digits in it contains a lone `"0"`
+  somewhere, e.g. inside `"11360"`) -- the exact same reasoning this file already applies
+  to percentages under "Why percentages are always hand-registered" above. Registering it
+  anyway would be a meaningless pass, so `docs/DEVPOST-SUBMISSION.md` states "SVE is never
+  entered" in prose instead.
+- **The build's total `kai_` symbol counts are not registered and are shown in
+  `[brackets]`.** Only the `kai_run_matmul`-specific counts -- `0` in the default build,
+  `10` in the fixed build -- are literally present in
+  `results/server/spark-provenance.txt` (`"kai_run_matmul symbols: 0"` /
+  `"kai_run_matmul symbols: 10"`, lines 9 and 16). A broader total across all `kai_`
+  symbols (packing helpers included, not just the matmul micro-kernels) is not present
+  anywhere in the committed provenance capture (`grep -n "36\|149"
+  results/server/spark-provenance.txt` returns nothing), so per this project's own hard
+  rule -- never state a number not in `results/`, bracket it otherwise -- that broader
+  total is not asserted as a verified figure.
+- **TTFT p99 does not monotonically improve with concurrency, and does not stay under
+  170ms across the whole 1-16 sweep.** `results/server/server-bench.json` shows a spike
+  to **0.221s (221ms) at 4 concurrent clients** -- higher than every other row, including
+  the 16-client row (0.168s). `docs/DEVPOST-SUBMISSION.md` states the true range
+  (89-221ms) and the spike, not a smoothed-over "stays under 170ms" claim.
+
 ## The registry
 
 <!-- CLAIMS-REGISTRY:BEGIN -->
@@ -685,6 +727,194 @@ building it.
         "numerator": 103.9,
         "denominator": 122.1
       }
+    },
+    {
+      "id": "server-tps-parallel1",
+      "value_text": "14.9",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[0].agg_tps_median",
+      "note": "aggregate tok/s, llama-server -cb, parallel=1/clients=1/threads=20"
+    },
+    {
+      "id": "server-tps-parallel4",
+      "value_text": "56.6",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[1].agg_tps_median",
+      "note": "aggregate tok/s, parallel=4/clients=4/threads=20"
+    },
+    {
+      "id": "server-tps-parallel8-t20",
+      "value_text": "271.8",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[2].agg_tps_median",
+      "note": "aggregate tok/s, parallel=8/clients=8/threads=20"
+    },
+    {
+      "id": "server-tps-parallel8-t4",
+      "value_text": "264.8",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[3].agg_tps_median",
+      "note": "aggregate tok/s, parallel=8/clients=8/threads=4 -- dropping threads 20->4 costs almost nothing"
+    },
+    {
+      "id": "server-tps-parallel16",
+      "value_text": "440.4",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[4].agg_tps_median",
+      "note": "aggregate tok/s, parallel=16/clients=16/threads=20"
+    },
+    {
+      "id": "server-tps-scaling-ratio",
+      "value_text": "29.6",
+      "source_file": "results/server/server-bench.json",
+      "note": "aggregate scaling from 1 to 16 concurrent clients: 440.4/14.9",
+      "aliases": [
+        "29.6x",
+        "29.6×",
+        "~29.6",
+        "~29.6x"
+      ],
+      "compute": {
+        "op": "ratio",
+        "numerator": 440.4,
+        "denominator": 14.9
+      }
+    },
+    {
+      "id": "server-ttft-p50-parallel1",
+      "value_text": "0.089",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[0].ttft_p50",
+      "note": "TTFT p50 (s), parallel=1"
+    },
+    {
+      "id": "server-ttft-p99-parallel1",
+      "value_text": "0.089",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[0].ttft_p99",
+      "note": "TTFT p99 (s), parallel=1 -- identical to p50 at this concurrency"
+    },
+    {
+      "id": "server-ttft-p50-parallel4",
+      "value_text": "0.092",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[1].ttft_p50",
+      "note": "TTFT p50 (s), parallel=4"
+    },
+    {
+      "id": "server-ttft-p99-parallel4",
+      "value_text": "0.221",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[1].ttft_p99",
+      "note": "TTFT p99 (s), parallel=4 -- the sweep's actual peak (221ms), not the 16-client row"
+    },
+    {
+      "id": "server-ttft-p50-parallel8-t20",
+      "value_text": "0.062",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[2].ttft_p50",
+      "note": "TTFT p50 (s), parallel=8/threads=20"
+    },
+    {
+      "id": "server-ttft-p99-parallel8-t20",
+      "value_text": "0.117",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[2].ttft_p99",
+      "note": "TTFT p99 (s), parallel=8/threads=20"
+    },
+    {
+      "id": "server-ttft-p50-parallel8-t4",
+      "value_text": "0.062",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[3].ttft_p50",
+      "note": "TTFT p50 (s), parallel=8/threads=4 -- same p50 as threads=20 at this concurrency"
+    },
+    {
+      "id": "server-ttft-p99-parallel8-t4",
+      "value_text": "0.094",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[3].ttft_p99",
+      "note": "TTFT p99 (s), parallel=8/threads=4 -- improves vs threads=20's 0.117 despite fewer threads"
+    },
+    {
+      "id": "server-ttft-p50-parallel16",
+      "value_text": "0.12",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[4].ttft_p50",
+      "note": "TTFT p50 (s), parallel=16"
+    },
+    {
+      "id": "server-ttft-p99-parallel16",
+      "value_text": "0.168",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[4].ttft_p99",
+      "note": "TTFT p99 (s), parallel=16"
+    },
+    {
+      "id": "server-rss-parallel1",
+      "value_text": "724",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[0].peak_rss_mib",
+      "note": "peak RSS (MiB), parallel=1"
+    },
+    {
+      "id": "server-rss-parallel4",
+      "value_text": "761",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[1].peak_rss_mib",
+      "note": "peak RSS (MiB), parallel=4"
+    },
+    {
+      "id": "server-rss-parallel8",
+      "value_text": "809",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[2].peak_rss_mib",
+      "note": "peak RSS (MiB), parallel=8, threads=20 -- identical at threads=4 ([3].peak_rss_mib is also 809)"
+    },
+    {
+      "id": "server-rss-parallel16",
+      "value_text": "901",
+      "source_file": "results/server/server-bench.json",
+      "source_json_path": "[4].peak_rss_mib",
+      "note": "peak RSS (MiB), parallel=16"
+    },
+    {
+      "id": "server-dispatch-i8mm",
+      "value_text": "364444",
+      "source_file": "results/server/server-dispatch.json",
+      "source_json_path": "i8mm",
+      "note": "kai_run_matmul I8MM breakpoint hits, gdb attached to llama-server, 8 concurrent clients, continuous batching",
+      "aliases": [
+        "364,444"
+      ]
+    },
+    {
+      "id": "server-dispatch-dotprod",
+      "value_text": "11360",
+      "source_file": "results/server/server-dispatch.json",
+      "source_json_path": "dotprod",
+      "note": "kai_run_matmul DOTPROD breakpoint hits, same run as server-dispatch-i8mm",
+      "aliases": [
+        "11,360"
+      ]
+    },
+    {
+      "id": "server-kai-run-matmul-symbols-broken",
+      "value_text": "0",
+      "source_file": "results/server/spark-provenance.txt",
+      "note": "kai_run_matmul symbol count, default build (-DGGML_CPU_KLEIDIAI=ON alone -- the GGML_NATIVE feature probe is silently rejected by gcc 13.3 on this box)"
+    },
+    {
+      "id": "server-kai-run-matmul-symbols-fixed",
+      "value_text": "10",
+      "source_file": "results/server/spark-provenance.txt",
+      "note": "kai_run_matmul symbol count, fixed build (+ -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod)"
+    },
+    {
+      "id": "server-sve-cnt",
+      "value_text": "16",
+      "source_file": "results/server/spark-provenance.txt",
+      "note": "SVE_CNT reported by the fixed build's system_info banner -- 128-bit SVE, below the 256-bit gate kleidiai.cpp:209 checks, so I8MM is selected over SVE"
     }
   ]
 }

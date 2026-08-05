@@ -406,11 +406,14 @@ dispatch layer*.
   `mcp/server.py`'s Linux code path, not yet exercised against real Linux/aarch64 hardware in this
   session** (see `mcp/README.md`'s own caveat: `"verified_on_this_session": false` on Linux).
 - L3 (dispatch-time `lldb`/`gdb` trace) on real SVE2 hardware confirming zero SVE-family hits:
-  **not yet obtained.** The self-hosted Spark CI lane (`.github/workflows/verify-spark-aarch64.yml`)
-  exists specifically to produce this, gated `continue-on-error: true` end-to-end because of a
-  separate, unrelated live incident on that runner (a suspected-OOM kernel kill, tracked in a
-  still-open PR in this repo's history) — that incident is why this finding is reported as
-  architecturally derived rather than fully dispatch-confirmed.
+  **obtained 2026-08-05**, via a direct `gdb`-attached trace on the DGX Spark itself
+  (`results/server/server-dispatch.json`, full account in `results/server/SERVER-LANE.md`) — **not**
+  via the self-hosted Spark CI lane (`.github/workflows/verify-spark-aarch64.yml`), which remains
+  gated `continue-on-error: true` and unresolved for the same reason recorded here previously (a
+  suspected-OOM kernel kill, tracked in a still-open PR in this repo's history). The server lane's
+  trace also covers a workload the CI lane was never built to exercise: 8 concurrent `llama-server`
+  clients under continuous batching, not single-user `llama-cli` decode/prefill. See the new
+  subsection below.
 - `kernels/sve2_gemm.c` (this project's own hand-written SVE2 kernel, using `svwhilelt` for a
   padding-free tail and `svmmla_s32`/i8mm for the int8 path) compiles cleanly cross-compiled for
   `-march=armv9.2-a+sve2+i8mm+bf16` — verified as a real ELF aarch64 object containing genuine
@@ -419,8 +422,31 @@ dispatch layer*.
   run on this non-SVE2 Apple machine, per the correctness suite — but has never executed on real
   SVE2 hardware in this session.
 
-**Do not upgrade this finding's confidence beyond "architecturally derived, dispatch confirmation
-pending" until the Spark lane (or an equivalent SVE2 host) produces a real L3 trace.**
+**Status, updated 2026-08-05:** upgraded from "architecturally derived, dispatch confirmation
+pending" to **confirmed**, on a second independent core family (Cortex-X925 / DGX Spark, in
+addition to the previously-confirmed Neoverse-N2 via free CI), and for the first time under
+concurrent multi-client serving load rather than only single-user `llama-cli` load/decode time. The
+self-hosted Spark CI lane referenced above is still unresolved and is **not** the source of this
+confirmation — a direct, manually-driven `gdb`-attached trace on the Spark is.
+
+### Confirmed on Cortex-X925, under concurrent serving load (2026-08-05)
+
+`results/server/spark-provenance.txt` reports, on a KleidiAI-enabled build fixed per Finding 3
+below, `SVE_CNT = 16` — a 16-byte (128-bit) SVE2 implementation, exactly half the 32-byte/256-bit
+width `kleidiai.cpp:209`'s exact-equality gate requires — and the same banner's
+`kleidiai: primary q4/q8 kernel feature I8MM` lines confirm I8MM, not SVE, was selected, precisely
+as the gate predicts. `results/server/server-dispatch.json`, captured with `gdb` attached to a live
+`llama-server` process serving 8 concurrent clients (10 `kai_run_matmul` breakpoints set — one per
+symbol in the fixed build's own `kai_run_matmul symbols: 10` count), records:
+
+```json
+{ "dotprod": 11360, "i8mm": 364444 }
+```
+
+No `sve` key appears in the file: across all `11360 + 364444 = 375,804` recorded calls, zero were
+attributed to the SVE kernel family. Full account, including the dispatch-shape inversion this
+lane also observed (i8mm-dominated under batched serving vs. dotprod-dominated in Finding 1's
+single-user Apple Silicon decode trace): `results/server/SERVER-LANE.md`.
 
 **Prior art:** this exact `kleidiai.cpp:209` line and the `QK8_0`-equality reasoning above were
 published, independently, two days before this repository existed, by a different project
@@ -431,13 +457,100 @@ work (most notably Finding 1, which their repository does not contain): `docs/RE
 
 ---
 
-## What would change either finding
+## Finding 3 — `llama.cpp`'s documented KleidiAI build line silently compiles zero matmul kernels on gcc 13.3 + Cortex-X925
+
+> **Authoritative for this finding's full evidence, banners, and scope discussion:**
+> `results/server/SERVER-LANE.md`. This section summarizes it at the same rigor as Findings 1 and
+> 2; it does not duplicate every table or caveat there.
+
+### The question
+
+Does following `llama.cpp`'s own documented KleidiAI build command actually produce a binary with
+Arm-accelerated matmul kernels? On the DGX Spark (Cortex-X925, gcc 13.3.0), the answer is no — and
+nothing about the build or its runtime banner says so.
+
+### The evidence
+
+`cmake -S . -B build -DGGML_CPU_KLEIDIAI=ON -DCMAKE_BUILD_TYPE=Release` — `llama.cpp`'s own
+documented KleidiAI build line, no unusual flags — produces, per `results/server/spark-provenance.txt`:
+
+```
+kai_run_matmul symbols: 0
+system_info: ... CPU : NEON = 1 | ARM_FMA = 1 | LLAMAFILE = 1 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 |
+kleidiai: no compatible q4 kernels found for CPU features mask 0
+kleidiai: no compatible q8 kernels found for CPU features mask 0
+kleidiai: no compatible f32 kernels found for CPU features mask 0
+```
+
+Zero compiled-in KleidiAI matmul micro-kernel entry points, of any family. The build exits 0. The
+banner prints `KLEIDIAI = 1` — the exact same flag value a working build also prints — with nothing
+in it that says acceleration failed. Only the `kleidiai:` log lines, and only their explicit
+`mask 0` (zero CPU features detected for kernel selection), give it away.
+
+Adding one flag pair, `-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH="armv9.2-a+sve2+i8mm+bf16+dotprod"`,
+to the same documented command, on the same commit, same compiler, same machine, produces:
+
+```
+kai_run_matmul symbols: 10
+system_info: ... CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1 |
+  SVE_CNT = 16 | OPENMP = 1 | KLEIDIAI = 1 | REPACK = 1 |
+kleidiai: primary q4 kernel feature I8MM
+kleidiai: primary q8 kernel feature I8MM
+```
+
+Both symbol counts (`0` and `10`) and both banners are quoted verbatim from
+`results/server/spark-provenance.txt`.
+
+### Root cause
+
+Reported diagnosis from this lane's build investigation (see `results/server/SERVER-LANE.md`'s
+provenance note for exactly which parts of this paragraph are a committed artifact versus reported
+methodology): `llama.cpp`'s CMake configure step cannot resolve an explicit `-march`/`-mcpu` for
+this target and falls back to probing feature suffixes (`+dotprod`, `+i8mm`, `+sve`, ...) on top of
+`-mcpu=native`. On gcc 13.3.0 + Cortex-X925, those suffixed probes were reported to fail —
+including the negative-control probes, which is the signature of a broken probe rather than an
+absent feature — because gcc 13.3 predates Cortex-X925 in its own `-mcpu` support table. An
+explicit `-march=armv9.2-a+i8mm`-style target, bypassing `-mcpu=native` probing entirely, compiles
+cleanly, which is exactly the fix quoted above. What *is* independently, verbatim confirmed by the
+committed evidence is the causal prediction this diagnosis makes: `kai_run_matmul symbols` goes
+from `0` to `10` between the two builds.
+
+### Severity and scope
+
+This is a **build-time, silent, complete loss of all Arm-specific matmul acceleration**,
+reproducible from `llama.cpp`'s own documented KleidiAI build instructions, with no error, no
+warning, and a `KLEIDIAI = 1` banner flag that reads as success either way.
+
+This is **not** a claim that every Arm machine is affected — it is specifically the
+**gcc 13.3.0 + Cortex-X925** pairing tested here: gcc 13.3 predates Cortex-X925 in its own `-mcpu`
+table, so `llama.cpp`'s `-mcpu=native`-based feature probing has nothing valid to probe against on
+this CPU with this compiler, and every suffixed probe fails. **The general, reusable lesson is that
+this failure mode recurs on any CPU newer than the toolchain compiling for it** — any pairing of a
+distribution's default gcc with a chip gcc added to its `-mcpu` table later than that gcc release
+is predicted to hit the same silent zero-kernel outcome on `llama.cpp`'s current documented build
+line, not a Spark-specific defect.
+
+---
+
+## What would change these findings
 
 - **A different Apple chip generation** (M5/M6, or an unlisted brand string) exercising the
   fallthrough branch of `detect_num_smcus()`'s table — not yet observed.
 - **A model/quant with different tensor shapes**, which changes whether `ne11 >= 128` and
   `ne01/n_threads >= 2` hold at a given thread count — the hybrid gate is workload-shape-dependent,
   not a fixed threshold independent of the model.
-- **A real SVE2 dispatch trace on the Spark** (or any other narrow-SVE2 Arm core) turning Finding 2
-  from "derived" into "confirmed," or — if it somehow doesn't reproduce — falsifying it, which would
-  itself be a significant and reportable result given how directly it follows from the source.
+- ~~A real SVE2 dispatch trace on the Spark (or any other narrow-SVE2 Arm core) turning Finding 2
+  from "derived" into "confirmed."~~ **Done, 2026-08-05** — see Finding 2's "Confirmed on
+  Cortex-X925, under concurrent serving load" subsection and `results/server/SERVER-LANE.md`. What
+  would still extend it further: a real SVE2 dispatch trace on a *third* independent core family, or
+  a wider SVE2 implementation (256-bit or above) that should, per the same gate, finally let the SVE
+  kernel family dispatch — neither has been observed.
+- **A committed gcc-probe transcript** for Finding 3 (the individual `-mcpu`/`-march` probe
+  compiles and their pass/fail outcomes, captured as a raw log rather than reported diagnosis) would
+  move that finding's root-cause explanation from "reported" to the same directly-cited-artifact
+  standard as the rest of this document — see the provenance note in
+  `results/server/SERVER-LANE.md`.
+- **A newer gcc release on the same Cortex-X925 hardware**, or the same gcc 13.3.0 on a chip gcc 13.3
+  already supports, would isolate whether Finding 3 is specifically a toolchain-predates-chip
+  mismatch (as diagnosed) rather than something else about this machine's build environment —
+  neither has been tried.

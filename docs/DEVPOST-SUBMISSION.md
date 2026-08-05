@@ -53,9 +53,19 @@ finding instead of letting a judge discover the overlap first (`docs/RELATED-WOR
 discipline — real measurement, real patch, honest attribution, honest limits — is the thing worth
 rewarding here, not just the raw multiplier.
 
+A second, independent machine (`results/server/`, DGX Spark, Cortex-X925, added 2026-08-05) extends
+that same discipline to genuine Arm server-class silicon and to the challenge's own "inference
+server speed" focus area, which this repository had nothing on before: no TTFT number, no memory
+figure, no concurrent-serving throughput anywhere in it. That lane now supplies all three, confirms
+Finding 2's 256-bit SVE-width gate on a second core family under real concurrent serving load (not
+just at single-user load time), and surfaces Finding 3 — a silent llama.cpp build defect this
+project's own verify-what-actually-ran method caught rather than went looking for: the tool's own
+CMake build line produces a binary with zero working matmul micro-kernels while its startup banner
+still prints `KLEIDIAI = 1`.
+
 ## Functionality / Output
 
-The final output is four things, all reproducible from this repository:
+The final output is six things, all reproducible from this repository:
 
 1. **A symbol-level dispatch verifier** (`tools/verify_dispatch.py`) that answers, for any
    `llama.cpp`-family binary and GGUF, whether an advertised accelerated kernel actually *executed*
@@ -86,6 +96,47 @@ The final output is four things, all reproducible from this repository:
    (`results/*.json` + `site/`), a hand-written NEON/SME2/SVE2 microkernel library proving the
    silicon itself isn't the limiter, and an upstream issue filed with reproduction steps
    ([ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547)).
+5. **A newly found silent build defect in llama.cpp's own KleidiAI feature detection** (Finding 3,
+   `results/server/spark-provenance.txt`): following llama.cpp's own documented build line
+   (`-DGGML_CPU_KLEIDIAI=ON`) on a DGX Spark (Cortex-X925, gcc 13.3) silently produces a binary
+   with **zero `kai_run_matmul` symbols** — the startup banner still prints `KLEIDIAI = 1`, but
+   every real matmul micro-kernel is missing, and the runtime log says `no compatible q4 kernels
+   found for CPU features mask 0`. The build succeeds and exits 0. Root cause: gcc rejects every
+   `-mcpu=native+<feature>` probe llama.cpp's CMake tries (its own negative-control probes fail
+   too — the tell that the probe itself is broken, not the feature). The fix is one flag pair
+   (`-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod`), which restores
+   **10 `kai_run_matmul` symbols** and a correct `MATMUL_INT8 = 1 | SVE = 1 | DOTPROD = 1` banner.
+   This is exactly the class of defect this project's verifier exists to catch — a log claiming
+   the accelerated path is active on a binary where it silently is not.
+6. **A concurrent-serving benchmark and dispatch-under-load capture** on the same DGX Spark
+   (`results/server/server-bench.json`, `server-dispatch.json`): `llama-server` with continuous
+   batching, `Qwen2.5-0.5B-Instruct-Q4_0`, swept 1→16 concurrent clients — aggregate throughput
+   **14.9 → 440.4 tok/s (~29.6x)** while peak RSS grows only **724 → 901 MiB** and TTFT p99 ranges
+   **89–221ms** across the sweep, peaking at 4 concurrent clients rather than climbing smoothly
+   with concurrency. A second reading: at 8 concurrent clients, dropping `--threads` from 20 to 4
+   costs almost nothing (271.8 → 264.8 tok/s aggregate) and TTFT p99 actually *improves*
+   (117 → 94ms) — under continuous batching the server is batch-bound, not thread-bound, unlike
+   this project's single-user decode story above. The same symbol-level method now runs under
+   `gdb` against a live `llama-server` process: 8 concurrent clients dispatch **364,444 I8MM** and
+   **11,360 DOTPROD** `kai_run_matmul` calls and zero SVE calls — confirming Finding 2's 256-bit
+   SVE-width gate on a second core family (Cortex-X925, `SVE_CNT = 16` i.e. 128-bit SVE) and, for
+   the first time, under real concurrent serving load rather than only at single-user decode.
+
+## How this maps to the challenge's optimization focus areas
+
+The challenge names six optimization focus areas. Coverage below is uneven by design, not by
+omission — this project's actual contribution is concentrated in speed, server speed, developer
+experience, and Arm-specific work; model size and model quality are measured honestly, not claimed
+as wins.
+
+| Optimization area | This project's evidence |
+|---|---|
+| **Model size** | Peak RSS measured across concurrency: **724 → 901 MiB** (`results/server/server-bench.json`). No size-reduction work (quantization, pruning, distillation) is claimed. |
+| **Model quality** | Byte-identical output at a fixed seed between patched and unpatched builds — an equivalence guarantee, not an accuracy/quality improvement claim. |
+| **Model speed** | Decode **67.8 → 145.9 tok/s (2.15x)** via `patches/0002` (`results/AUTODEFAULTS.md`); TTFT is now measured (see the row below). |
+| **Inference server speed** | **14.9 → 440.4 tok/s** aggregate across 1–16 concurrent `llama-server` clients (~29.6x); TTFT p99 ranges **89–221ms** across that sweep — peaking at 4 concurrent clients, not the highest-concurrency row (`results/server/server-bench.json`). |
+| **Developer experience** | The symbol-level dispatch verifier, MCP server, free-CI lane, dashboard, and this claims gate — plus Finding 3, a silent llama.cpp build defect this project's own method caught: the banner says `KLEIDIAI = 1` on a binary with zero working matmul kernels. |
+| **Arm-specific optimization** | `patches/0002` into llama.cpp; SME2/SVE2/I8MM micro-kernels; three Arm microarchitectures measured (Apple M4 Max, GitHub's free Neoverse-N2 runner, DGX Spark Cortex-X925). |
 
 ## Setup Instructions
 
@@ -154,10 +205,14 @@ against.
 - **Single machine per finding.** Finding 1 (SME2's hardcoded per-chip thread cap) is verified live
   on one Apple M4 Max; the base "M4"/"M4 Pro"/"M4 Ultra" cap values for other chips are read from
   source, not independently measured.
-- **Finding 2 (the SVE2 256-bit exact-width gate) is architecturally derived, not yet
-  dispatch-confirmed** on real SVE2 hardware — the DGX Spark CI lane exists for this but has not
-  completed a clean run yet. It was also **published two days before this repository existed** by
-  a different, unrelated project, [`luongs3/arm-dispatch-audit`](https://github.com/luongs3/arm-dispatch-audit)
+- **Finding 2 (the SVE2 256-bit exact-width gate) is now dispatch-confirmed on real SVE2
+  hardware.** `results/server/` (DGX Spark, Cortex-X925, `SVE_CNT = 16`, i.e. 128-bit SVE) shows
+  I8MM selected over SVE exactly as the gate predicts, including under concurrent `llama-server`
+  load (364,444 I8MM vs. 0 SVE calls). That confirmation was gathered manually on the box, not via
+  the automated `verify-spark-aarch64.yml` CI lane, which remains `continue-on-error` and
+  best-effort (see Setup Instructions) because of a separate, unrelated incident on this project's
+  own Spark runner. It was also **published two days before this repository existed** by a
+  different, unrelated project, [`luongs3/arm-dispatch-audit`](https://github.com/luongs3/arm-dispatch-audit)
   — full disclosure and what this project adds beyond it: `docs/RELATED-WORK.md`. This project does
   not claim priority on that finding.
 - **The `0001` phase-aware dispatch patch is a measured regression, not a win** (~12% slower at
@@ -190,6 +245,16 @@ against.
 - Absolute throughput numbers throughout were collected on a busy, multi-agent-shared machine; the
   interleaved **ratios**, not the absolute tok/s figures, are the trustworthy part — stated
   explicitly everywhere a number is quoted.
+- **The DGX Spark has no SME/SME2.** Finding 1 (SME2's hardcoded per-chip decode thread cap) was
+  not, and cannot be, reproduced there — the Spark lane adds Finding 3 (a new build defect), a
+  second-core confirmation of Finding 2, and the concurrent-serving numbers above; it says nothing
+  new about Finding 1.
+- **The server-lane numbers are one model, one quant, one machine.** `results/server/` is
+  `Qwen2.5-0.5B-Instruct-Q4_0` only, on one DGX Spark unit — not a model-size × quant grid, and not
+  independently reproduced on a second Spark.
+- **`llama-server` only — not vLLM, TGI, or any other serving stack.** The concurrent-serving
+  throughput/TTFT/memory numbers and the dispatch-under-load capture are specific to `llama.cpp`'s
+  own server; nothing here measures or claims anything about other inference servers.
 
 ---
 
