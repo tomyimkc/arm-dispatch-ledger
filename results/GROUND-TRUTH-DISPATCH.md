@@ -201,3 +201,48 @@ reasons — `perf_event_paranoid = 4`, and a kernel PMU driver that enumerates 7
 SVE/SME/ASE instruction-class counter among them. The intended PMU-vs-L3 cross-validation is
 therefore **unperformed, not passed**. Full detail and provenance:
 [`results/pmu/pmu-crosscheck.json`](pmu/pmu-crosscheck.json).
+
+---
+
+## Addendum 2026-08-06 — which bytes did this page measure? A provenance gap, disclosed
+
+**Trigger.** On 2026-08-06 the cached baseline `/tmp/ggufs/q05.gguf` failed a check against
+`scripts/models.txt`: the file on disk is sha256
+`c8cd5f37dd1235fb010c45316d4ff8af875e1a4e0ff368b4bf6cacb9053d4919`, 352,972,352 bytes; the
+manifest lists `7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed`.
+
+**What checking upstream established.** Hugging Face's tree API reports the official
+`Qwen/Qwen2.5-0.5B-Instruct-GGUF` q4_0 blob as `7671c0c3…`, **428,730,208 bytes**, with the
+repo unchanged since 2024-09-20. So no ~337 MB file with the manifest's hash ever existed:
+the manifest row pairs the HF file's real hash (captured by a real Aug-4 download — of a
+428.7 MB file) with the size and role of the local baseline. Those were never the same file,
+and the manifest's claim that every committed Finding 1/2 measurement used the hash-listed
+file is wrong as written.
+
+**What the measured baseline actually was.** The ledger this page narrates
+(`dispatch-ledger-darwin-arm64.json`, generated 2026-08-03T22:26Z) records only a model
+*path*, not a hash — as did every ledger produced before this addendum. The strongest
+available identification: Finding 4's independently committed evidence
+(`upstream/llamacpp-26334-cuda-host-buffer.json`, Arm test box, 2026-08-05) records its
+`q05.gguf` as sha256 `c8cd5f37…` — the same bytes as the file on this machine today, whose
+mtime predates the Aug-3 run. On that evidence the working baseline across both machines was
+the `c8cd5f37…` file (352,972,352 bytes), whose original source is **unrecorded** — it did
+not come from the manifest's HF URL, whose file has been 428,730,208 bytes for its entire
+history. This is identification, not proof: no darwin ledger recorded a hash at measurement
+time, which is exactly the gap being disclosed.
+
+**Corroboration by re-measurement (2026-08-06).** A fresh sweep on this machine using the
+true HF file (sha `7671c0c3…` verified before use) at llama.cpp `a035a8887` — changing
+**both** the model bytes **and** the commit relative to this page (`q05.gguf` @ `dbadb68`) —
+reproduces **all 10 dispatch verdicts identically**, with per-cell L3 totals uniformly
++1.8–2.2% (ratios 1.0181–1.0218; e.g. 4-thread decode 15,936 → 16,224). Raw evidence:
+[`upstream/pr26076/`](upstream/pr26076/). The count shift is jointly attributable to the two
+changed variables and is not decomposed here. What this corroborates is the load-bearing
+content of this page: the SME2 dispatch **rule** (cap-gated decode, hybrid prefill, kernel
+family selection) is invariant across both model files and both commits. Absolute hit counts
+were never the claim.
+
+**Fix going forward.** As of the commit adding this note, `tools/verify_dispatch.py` writes
+`model_sha256` and `model_bytes` into every ledger it produces, so "which bytes did this
+measure" is answerable from the artifact alone. Per this repo's rules no existing results
+file was edited; this note is appended.

@@ -60,6 +60,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import glob
+import hashlib
 import json
 import os
 import platform
@@ -1667,6 +1668,11 @@ def main(argv=None) -> int:
         if record["quant"] == "[pending -- resolved after full sweep]":
             record["quant"] = quant_final
 
+    model_digest = hashlib.sha256()
+    with open(model, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            model_digest.update(chunk)
+
     ledger = {
         "schema_version": 1,
         "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -1675,6 +1681,12 @@ def main(argv=None) -> int:
         "binary": binary,
         "cpu_backend_lib": lib_path,
         "model": model,
+        # Identity of the exact bytes measured, not just their path. A cached model file
+        # was found hash-mismatched against scripts/models.txt on 2026-08-06, and no
+        # ledger written before then could prove which bytes it had measured -- see the
+        # dated addendum in results/GROUND-TRUTH-DISPATCH.md.
+        "model_sha256": model_digest.hexdigest(),
+        "model_bytes": os.path.getsize(model),
         "configs": configs,
     }
 
