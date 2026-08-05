@@ -1,0 +1,26 @@
+# In-tree dispatch-summary counter vs independent L3 debugger counting
+# Date: 2026-08-06. Machine: Apple M4 Max, macOS 27.0 (26A5378n), AppleClang 21.0.0.21000323.
+# Binary: llama.cpp PR #26076 head 7d8324875 + the 2-commit dispatch-summary prototype
+#   (kleidiai: count micro-kernel dispatch...; tests: add fail-closed KleidiAI dispatch-execution test)
+# Build: -DCMAKE_BUILD_TYPE=Release -DGGML_CPU_KLEIDIAI=ON -DGGML_METAL=OFF
+# Model: qwen2.5-0.5b-instruct-q4_0.gguf sha256 7671c0c304e6ce5a7fc577bcb12aba01e2c155cc2efd29b2213c95b18edaf6ed
+# Workload: identical to the committed L3 ledgers in this directory (decode_short: -p "Hello." -n 4 -no-cnv -st --simple-io)
+# L3 reference (dispatch-pr-7d8324875-m4max-q4_0.json, lldb breakpoint counting): t=2 total 5952 (SME2), t=8 total 32445 (dotprod)
+
+== GGML_KLEIDIAI_SUMMARY=1 llama-cli ... -t 2 --verbose ==
+kleidiai: dispatch summary: selected q4=SME2 q8=SME2 f32=SME2
+kleidiai: dispatch summary: executed qx_gemm/SME2=2883
+kleidiai: dispatch summary: executed qx_gemv/SME2=3069
+kleidiai: dispatch summary: executed total=5952
+
+== GGML_KLEIDIAI_SUMMARY=1 llama-cli ... -t 8 --verbose ==
+kleidiai: dispatch summary: selected q4=SME2 q8=SME2 f32=SME2
+kleidiai: dispatch summary: executed qx_gemm/DOTPROD=15840
+kleidiai: dispatch summary: executed qx_gemv/I8MM=192
+kleidiai: dispatch summary: executed qx_gemv/DOTPROD=16416
+kleidiai: dispatch summary: executed total=32448
+
+== tests/test-kleidiai-dispatch (same build) ==
+mul_mat [256 x 256] * [256 x 1]: 4 KleidiAI kernel invocations - OK
+mul_mat [256 x 256] * [256 x 8]: 4 KleidiAI kernel invocations - OK
+OK
