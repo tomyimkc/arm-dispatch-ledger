@@ -920,3 +920,27 @@ project's own no-overclaim discipline):
 }
 ```
 <!-- CLAIMS-REGISTRY:END -->
+
+### DGX Spark — KleidiAI matmul symbol counts (`results/server/kai-symbols.txt`)
+
+| claim | value | source |
+|---|---|---|
+| default build, total `kai_` symbols | 36 | `results/server/kai-symbols.txt` |
+| default build, `kai_run_matmul` symbols | 0 | `results/server/kai-symbols.txt` |
+| fixed build, total `kai_` symbols | 149 | `results/server/kai-symbols.txt` |
+| fixed build, `kai_run_matmul` symbols | 10 | `results/server/kai-symbols.txt` |
+| fixed build, dotprod family | 6 | `results/server/kai-symbols.txt` |
+| fixed build, i8mm family | 2 | `results/server/kai-symbols.txt` |
+| fixed build, sve family | 2 | `results/server/kai-symbols.txt` |
+
+**Counting method matters.** A symbol such as
+`kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm` contains *both* `neon` and
+`i8mm`. Counting substring occurrences therefore double-counts and produces family totals that
+exceed the symbol count — an earlier draft of this lane reported "dotprod 7 / i8mm 3 / neon 8 /
+sve 2", which sums to 20 against 10 symbols and was rejected for exactly that reason. The table
+above assigns each symbol to exactly one family, most-specific token first.
+
+**The load-bearing consequence:** the fixed build compiles in **2 SVE matmul kernels**, and the
+concurrent-load dispatch trace (`results/server/server-dispatch.json`) records **zero** SVE calls.
+The kernels exist, the silicon has SVE2, and the dispatcher still never selects them — Finding 2,
+observed end to end on Cortex-X925.

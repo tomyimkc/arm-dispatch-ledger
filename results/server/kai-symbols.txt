@@ -1,0 +1,27 @@
+# KleidiAI matmul micro-kernel symbols — DGX Spark (Cortex-X925), llama.cpp dbadb68, gcc 13.3.0
+# Family assignment: most-specific token wins, one family per symbol (a name like
+# '..._neon_i8mm' contains BOTH tokens; counting substrings double-counts and must not be used).
+
+[DEFAULT BUILD]  cmake -DGGML_CPU_KLEIDIAI=ON
+  total kai_ symbols:      36
+  kai_run_matmul symbols:  0
+
+[FIXED BUILD]  + -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod
+  total kai_ symbols:      149
+  kai_run_matmul symbols:  10
+  by family:
+    sve      2
+    i8mm     2
+    dotprod  6
+
+  full symbol list:
+    kai_run_matmul_clamp_f32_qai8dxp1x4_qsi8cxp4x4_1x4_neon_dotprod
+    kai_run_matmul_clamp_f32_qai8dxp1x8_qsi8cxp4x8_1x4_neon_dotprod
+    kai_run_matmul_clamp_f32_qai8dxp4x4_qsi8cxp4x4_16x4_neon_dotprod
+    kai_run_matmul_clamp_f32_qai8dxp4x8_qsi8cxp4x8_16x4_neon_i8mm
+    kai_run_matmul_clamp_f32_qsi8d32p1x4_qsi4c32p4x4_1x4_neon_dotprod
+    kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p4x8_1x4x32_neon_dotprod
+    kai_run_matmul_clamp_f32_qsi8d32p1x8_qsi4c32p8x8_1x8_sve_dotprod
+    kai_run_matmul_clamp_f32_qsi8d32p4x4_qsi4c32p4x4_16x4_neon_dotprod
+    kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p4x8_16x4_neon_i8mm
+    kai_run_matmul_clamp_f32_qsi8d32p4x8_qsi4c32p8x8_16x8_sve_i8mm
