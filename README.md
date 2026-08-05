@@ -1,103 +1,68 @@
 # Polygraph
 
-**Polygraph checks whether your software is telling the truth about the hardware acceleration it
-claims to use.** Point it at a binary and a workload; it attaches a debugger to the real kernel
-entry points — not a timing guess, not the startup banner — and reports whether the accelerated
-code path actually ran. **Does your software actually do what it says?** That's the question this
-tool answers, and the question the rest of this document answers for one real case: `llama.cpp`'s
-KleidiAI CPU backend on Arm.
+**`llama.cpp`'s own documented KleidiAI build command exits `0` and prints `KLEIDIAI = 1`. We
+counted the kernel symbols actually compiled into the binary instead of trusting that banner —
+there were zero. The invisible gap costs 4.57x on prompt processing at a realistic model size.**
 
-**Why "Polygraph":** a lie detector doesn't take a claim's word for it — it checks what the body
-actually did underneath it. This project does the same for a software performance claim: it
-doesn't trust the log line that says an accelerator is "enabled," it counts the real calls into
-the kernel.
+Polygraph asks that question generically: does software's own claim about the hardware
+acceleration it uses match what actually happened? It answers by counting — compiled-in kernel
+symbols, the runtime's own selection log, and (with a non-halting debugger breakpoint) real
+kernel dispatch hit counts — never by trusting a startup banner. The finding above is
+`llama.cpp`'s KleidiAI CPU backend on Arm, filed upstream as
+[ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547); everything below
+is the receipt.
 
-**Previously called Arm Dispatch Ledger.** The old GitHub URL,
-[`github.com/tomyimkc/arm-dispatch-ledger`](https://github.com/tomyimkc/arm-dispatch-ledger),
-redirects here automatically — an old link or clone still works, it just lands on this repo under
-its new name.
+## See it catch one, in two minutes, on your own laptop
 
-**`llama.cpp` already has the flags to fix this. Nobody uses them, because the tool's own banner
-says the fast kernel is already running.** This project verifies that it isn't (an undocumented
-dispatch gap in `llama.cpp`'s KleidiAI CPU backend — a real limit of its hardcoded per-chip
-thread-cap design, not a code defect), measures the per-phase performance cost of that gap, finds
-the exact source-level reason the dispatcher can't correct itself, patches that reason, measures
-the patch honestly — including where it falls short — and reports it upstream. The verifier
-(`tools/verify_dispatch.py`) is the *method* used throughout this arc, not the whole product; it
-ships alongside an MCP server, a phase-crossover benchmark harness, an upstream patch, a results
-dashboard, and a hand-written Arm kernel library, all as reusable artifacts.
+No Arm hardware. No model download. No dependencies beyond a C compiler and a debugger.
 
-**Live dashboard:** <https://tomyimkc.github.io/polygraph/> — the advertised-vs-executed ledger, rendered from the committed JSON in `results/`, published by `.github/workflows/pages.yml` on every push to `main`.
-
-**Prior art / scholarly hygiene:** this project's Finding 2 mechanism turns out to have been
-published two days earlier by a different, unrelated repository. We cite it, state plainly what it
-found first, and what this project adds on top — see
-**[`docs/RELATED-WORK.md`](docs/RELATED-WORK.md)**, and read it before assuming either finding here
-is uncontested.
-
-**New (measured 2026-08-05): the most user-impactful finding yet, and the project's first
-server-class evidence.** Following `llama.cpp`'s own documented KleidiAI build line on a DGX Spark
-(Cortex-X925, 20-core Armv9.2 server silicon) produces a binary with **zero working matmul
-micro-kernels** — while the startup banner still prints `KLEIDIAI = 1` and the build exits `0`. One
-flag pair fixes it — see **Finding 3**, below. Rebuilt correctly, that same server sustains
-**~29.6x** aggregate throughput scaling from 1 to 16 concurrent `llama-server` clients (14.9 →
-440.4 tok/s) — this project's first inference-server (Cloud-AI) measurements, including
-time-to-first-token, memory, and a second-platform dispatch confirmation of Finding 2 under real
-serving load. Full tables and methodology: **"Cloud AI: measured on server-class Arm"**, below.
-
-**The optimization, re-measured 2026-08-04 on this repo's own hardware (Apple M4 Max, `llama-bench
--r 1`, n=7, round-robin interleaved against external load, median ± stdev — full table below):**
-matching thread count to phase — `-t 2` for decode, `-t 8`/`-tb 8` for prefill, both flags
-`llama.cpp` already ships — beats the default config by **3.43x on decode (93.6 → 321.0 tok/s) and
-1.79x on prefill (1,230.3 → 2,198.1 tok/s), today, with zero code changes.** Most of that decode
-number is **not** an SME2 discovery: a dedicated decomposition sweep (full breakdown in
-"Decomposition" under "The optimization" below) shows thread tuning *alone*, with SME2 forced off
-the entire time, already accounts for the majority of the total measured win — the well-documented
-"fewer threads help token generation on Apple Silicon" memory-bandwidth effect, not something this
-project found. SME2 (Finding 1 below: a hardcoded per-chip thread cap that silently excludes decode
-from the fast kernel) adds a real, smaller win on top of that at the tuned thread count, and
-measurably *hurts* at the default thread count — see the Decomposition section for the exact ratios
-and why the two effects are easy to conflate. We also wrote and measured an opt-in patch
-(`patches/0001-kleidiai-phase-aware-dispatch.patch`) meant to recover the thread-gating gap
-automatically for a user who never touches a thread flag at all — the honest, re-measured result is
-that it does **not** help: at default thread count it is **~12% slower** (93.6 → 82.5 tok/s), a
-real regression outside the noise, even though the dispatch change it makes is genuine and
-symbol-level proven. See "The optimization" section below for the full before/after table, the
-decomposition, the patch's mechanism, the symbol-level dispatch proof, and why the dispatch change
-doesn't translate into a throughput win.
-
-**Correction (2026-08-05): that 3.43x decode multiple does not generalize past a tiny model.** An
-independent thread-count sweep on a second machine (DGX Spark, Cortex-X925) across two model sizes
-shows the same class of win shrinking from **4.56x at 0.5B to a modest 1.33x at 7B** — see "Does the
-3.43x decode-tuning win generalize to a bigger model?" under "The optimization," below, and
-`results/scale/SCALE-EXPERIMENT.md` for the full data. The 93.6 → 321.0 tok/s / 3.43x figures above
-remain accurate for their own scope (Apple M4 Max, this exact 0.5B model) and are not being
-retracted; they should just not be read as a multiple that generalizes to larger models. The same
-build defect this project's verifier exists to catch (Finding 3, below) turns out to cost *more*, not
-less, at a realistic model size — 4.57x prefill / 1.65x decode at 7B, the largest speedup this
-project has measured from fixing a single build-time defect rather than tuning a runtime knob.
-
-*(An earlier version of the headline numbers above was wrong and has since been retracted and
-re-measured — see [Correction (2026-08-04)](#correction-2026-08-04) below for the full account.)*
-
-**The hook that started this — measured with real `lldb` breakpoints, not inferred:** at
-`llama.cpp`'s *default* thread count (physical core count — 16 on this machine), single-token
-decode **never dispatches SME2**, even though the startup banner and the runtime log both keep
-claiming `SME2 enabled` on every single one of those runs.
-
-```
-threads=1   decode: SME2 fires (996 lldb hits)         <- advertised AND executed
-threads=8   decode: SME2 fires ZERO times (31,871 NEON hits instead)   <- advertised, NOT executed
-threads=16  decode: SME2 fires ZERO times (51,215 NEON hits instead)   <- advertised, NOT executed
+```bash
+git clone https://github.com/tomyimkc/polygraph && cd polygraph
+make demo
 ```
 
-All numbers in this document were produced by code in this repo, run for real on real Arm
-hardware. Anything not yet measured is marked `[not yet measured]` — never invented, never
-interpolated. See `results/REMEASURE-2026-08-04-QUIET.md` for the authoritative, corrected
-throughput numbers (supersedes `results/OPTIMIZATION.md` and `results/crossover/` where they
-disagree), `results/SUMMARY.md` for the diagnosis run log, and `results/GROUND-TRUTH-DISPATCH.md`
-for the authoritative, corrected dispatch rule (an earlier draft of that finding was incomplete —
-see "the correction, up front" in Finding 1 below).
+![Polygraph catching a binary that lies about its own fast path](docs/media/catch-a-liar.gif)
+
+*(A real recording of `make demo` on an Apple M4 Max — not a mockup. Regenerate it yourself with
+`tools/render_demo_gif.py`.)*
+
+`examples/catch-a-liar/liar.c` is thirty lines of C compiled two ways. **Both builds print the
+same banner — `using fast path: yes` — and return the same answer.** One of them is lying. The
+banner cannot tell you which; timing them barely can, because the fallback is fast enough to hide
+in the noise.
+
+Polygraph attaches a debugger and counts. The liar's fast-path function exists in the binary and
+is never once entered (`exit 1`); the honest build enters it (`exit 0`). That is the whole idea,
+and it is the same idea that found a **4.57x** regression hiding behind `KLEIDIAI = 1` in
+`llama.cpp`.
+
+Then point it at something real:
+
+```bash
+tools/polygraph list                                    # every built-in target
+tools/polygraph explain llama-cpp-kleidiai              # what it checks, and why
+tools/polygraph check llama-cpp-kleidiai --binary ./llama.cpp/build/bin/llama-cli
+```
+
+Exit codes are contractual, so CI can depend on them: **`0`** what was advertised actually ran,
+**`1`** it did not, **`2`** could not be determined. Never a silent `0`. Full walkthrough in
+[`docs/QUICKSTART.md`](docs/QUICKSTART.md); the one-line CI gate is in [`docs/CI.md`](docs/CI.md).
+
+## The evidence
+
+Every row below cites the raw JSON it came from — nothing here is estimated or interpolated.
+
+| Finding | Measured | Source |
+|---|---|---|
+| Kernel symbols the "documented" build line actually compiles in | **0** of 10 `kai_run_matmul` symbols exist; two `cmake` flags restore all 10 | [`results/server/spark-provenance.txt`](results/server/spark-provenance.txt) |
+| Cost of that gap — 7B model, prompt processing (prefill) | **4.57x** slower (48.64 → 222.14 tok/s) | [`results/scale/scale-experiment.json`](results/scale/scale-experiment.json) |
+| Cost of that gap — 7B model, token generation (decode) | **1.65x** slower (11.17 → 18.45 tok/s) | [`results/scale/scale-experiment.json`](results/scale/scale-experiment.json) |
+| A second, independent silent fallback: decode never dispatches SME2 above 2 threads | banner still says `SME2`; real dispatch is 0 SME2 hits vs 31,871 NEON hits (8 threads) | [`results/dispatch-ledger-darwin-arm64.json`](results/dispatch-ledger-darwin-arm64.json) |
+| What attaching a debugger to prove this actually costs | **3.63x** wall-clock overhead (1.2056s → 4.379s) for a dispatch count reproducible at 15,936 hits across all 5 runs | [`results/pmu/pmu-crosscheck.json`](results/pmu/pmu-crosscheck.json) |
+| This project's own past mistake | a **+57.3%** win for a patch was published, then **publicly retracted** — it came from measuring baseline and patched configs in different, unevenly-contended time windows | [`results/REMEASURE-2026-08-04-QUIET.md`](results/REMEASURE-2026-08-04-QUIET.md) |
+
+The rest of this document is the full paper trail: how L1/L2/L3 verification works, every
+measured platform, the honest limits of each finding, and how to run it yourself.
 
 ---
 
@@ -882,6 +847,38 @@ non-TTY stdin.
 | [`docs/RELATED-WORK.md`](docs/RELATED-WORK.md) | Full disclosure that Finding 2's mechanism was independently published two days before this repo existed, what this project adds beyond that prior work, and an honest one-line comparison against every other Track 2 entry we're aware of — a reusable template for how a submission should handle being partially scooped. |
 | `tests/l3_gdb_groundtruth/` | A dlopen-based harness that asserts the L3 probe recovers a *known* call count. Written after our own gdb probe silently reported zero hits on the free CI lane — the exact failure mode this project exists to catch. Reusable by anyone instrumenting a dynamically-loaded kernel library. |
 | Three verify CI lanes (`.github/workflows/verify-*.yml`) | A template for a free-hosted judge-reproducible lane plus two self-hosted lanes with correctly scoped `pull_request` exclusions for physical hardware; the free lane now runs as a model matrix derived from `scripts/models.txt`. |
+
+---
+
+## Provenance: rename, prior art, and the correction record
+
+**Previously called Arm Dispatch Ledger.** The old GitHub URL,
+[`github.com/tomyimkc/arm-dispatch-ledger`](https://github.com/tomyimkc/arm-dispatch-ledger),
+redirects here automatically — an old link or clone still works, it just lands on this repo under
+its new name.
+
+**Live dashboard:** <https://tomyimkc.github.io/polygraph/> — the advertised-vs-executed ledger,
+rendered from the committed JSON in `results/`, published by `.github/workflows/pages.yml` on
+every push to `main`.
+
+**Prior art, in both directions.** Finding 2's mechanism was published two days before this repo
+existed, by a different, unrelated project — full disclosure, dates, and what this project adds on
+top: [`docs/RELATED-WORK.md`](docs/RELATED-WORK.md). And the L3 technique this project is built
+around — a debugger breakpoint that counts hits without halting the program — is not novel either;
+it is documented, standard `gdb`/`lldb` scripting, and cheaper alternatives exist for parts of the
+same question (`bpftrace` uprobes, Arm PMU instruction counters, a runtime's own
+`*_VERBOSE`-style log). [`docs/PRIOR-ART-AND-ALTERNATIVES.md`](docs/PRIOR-ART-AND-ALTERNATIVES.md)
+says so plainly, before you read the results, not after.
+
+**The correction record.** An earlier version of this project's headline optimization numbers — a
+**+57.3%** win for a patch — was wrong: it came from measuring the baseline and the patched config
+in different, unevenly-contended time windows. It was **publicly retracted** and every affected
+number was re-measured, round-robin interleaved, on a quiet host. Full account:
+[Correction (2026-08-04)](#correction-2026-08-04), below, and `results/REMEASURE-2026-08-04-QUIET.md`.
+
+None of this is filler. It is why the 4.57x at the top of this document is worth believing — a
+project that publishes its own mistakes, and credits the people who beat it to a finding, is one
+whose remaining numbers you can spend less time second-guessing.
 
 ---
 

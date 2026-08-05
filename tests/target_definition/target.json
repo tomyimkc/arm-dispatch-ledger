@@ -1,0 +1,46 @@
+{
+  "name": "test-fastpath",
+  "aliases": [],
+  "tested": true,
+  "description": "Synthetic fixture target used ONLY by tests/target_definition/run_test.sh -- proves tools/polygraph's declarative L1/L2/L3 pipeline against a known ground truth (libfake_accel.c), independent of any real-world project's build quirks. Not a real-world preset; not listed for judges via `polygraph list` scope (it lives under tests/, not tools/targets/).",
+  "why_it_matters": "A test fixture, not a product claim.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["fake_main"],
+      "lib_globs": ["libfake_accel.dylib"]
+    },
+    "linux": {
+      "binary_globs": ["fake_main"],
+      "lib_globs": ["libfake_accel.so"]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "lib",
+    "symbol_prefix": "poly_fastpath_",
+    "dispatch_regex": "^poly_fastpath_(avx|scalar)_add$",
+    "family_order": ["avx", "scalar"],
+    "note": "Ground truth: exactly 2 matching symbols (poly_fastpath_avx_add, poly_fastpath_scalar_add), plus poly_fastpath_workload (has the prefix but doesn't match the _add$ dispatch_regex, so it counts toward the prefix-filtered total but not the matched count)."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": "advertised_family",
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "advertised_family", "regex": "selected: fastpath=(\\S+)", "group": 1}
+    ],
+    "note": "fake_main ALWAYS prints 'selected: fastpath=avx' regardless of which function it actually calls -- see main.c's header. This is what lets run_test.sh's 'silent fallback' scenario exist at all."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "lib",
+    "dispatch_regex": "^poly_fastpath_(avx|scalar)_add$",
+    "note": "Non-halting breakpoint dispatch count, same mechanism as every real preset."
+  },
+  "workload": {
+    "requires": [],
+    "arg_template": ["{n}", "{actual}"],
+    "defaults": {"n": "5", "actual": "avx"},
+    "note": "{n} = call count, {actual} = which symbol family really runs ('avx' or 'scalar') -- see main.c. Override both via --param n=N --param actual=avx|scalar."
+  }
+}

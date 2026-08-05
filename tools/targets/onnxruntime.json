@@ -1,0 +1,59 @@
+{
+  "name": "onnxruntime",
+  "aliases": [],
+  "tested": true,
+  "description": "ONNX Runtime's execution-provider graph partitioning -- the 'famous silent CPU fallback': you request an accelerated EP (CoreML here; CUDA/TensorRT/DirectML elsewhere), and any node that EP doesn't support quietly runs on CPUExecutionProvider instead, with no error and a correct result.",
+  "why_it_matters": "Unlike KleidiAI's single-kernel-family selection, ONNX Runtime accelerates a GRAPH by partitioning it node-by-node across providers. `providers=['CoreMLExecutionProvider', 'CPUExecutionProvider']` is a completely normal, common call -- and it can mean anywhere from 100% to 0% of the graph actually runs on CoreML, with the default (non-verbose) log giving no indication which. This is the same evidence-layering problem as KleidiAI (a claim you can't verify without turning on the runtime's own internal log), on a different, extremely widely-deployed piece of software.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["python3", "bin/python3"],
+      "lib_globs": ["libonnxruntime*.dylib", "onnxruntime_pybind11_state*.so", "onnxruntime/capi/libonnxruntime*.dylib", "onnxruntime/capi/onnxruntime_pybind11_state*.so", "**/onnxruntime/capi/onnxruntime_pybind11_state*.so"]
+    },
+    "linux": {
+      "binary_globs": ["python3", "bin/python3"],
+      "lib_globs": ["libonnxruntime*.so*", "onnxruntime_pybind11_state*.so", "onnxruntime/capi/libonnxruntime*.so*", "onnxruntime/capi/onnxruntime_pybind11_state*.so", "**/onnxruntime/capi/onnxruntime_pybind11_state*.so"]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "lib",
+    "symbol_prefix": null,
+    "dispatch_regex": "(?i).*coreml.*",
+    "family_order": ["coreml"],
+    "note": "--binary should be the python3 interpreter onnxruntime is importable from; --lib-dir/--lib-name should point at THAT interpreter's onnxruntime/capi/ dir (python3's own directory is not the package directory, unlike a compiled CLI -- see workload.note). This is a weak, presence-only L1 signal (does a CoreML EP factory symbol exist at all) -- ONNX Runtime's real evidence for THIS project's question lives in L2 (the per-node partition log), not L1: unlike a single kai_run_matmul-shaped kernel family, there is no fixed small set of 'CoreML execution' symbols to breakpoint on (see l3.note)."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": null,
+    "fallback_indicator_label": "cpu_fallback_seen",
+    "patterns": [
+      {"label": "coreml_capability", "regex": "CoreMLExecutionProvider::GetCapability, number of partitions supported by CoreML: (\\d+) number of nodes in the graph: (\\d+) number of nodes supported by CoreML: (\\d+)", "group": 0},
+      {"label": "coreml_nodes_placed", "regex": "Node\\(s\\) placed on \\[CoreMLExecutionProvider\\]\\. Number of nodes: (\\d+)", "group": 1},
+      {"label": "cpu_fallback_seen", "regex": "Node\\(s\\) placed on \\[CPUExecutionProvider\\]\\. Number of nodes: (\\d+)", "group": 1}
+    ],
+    "note": "This IS the load-bearing evidence layer for this target. Requires SessionOptions.log_severity_level=0 (VERBOSE) -- the default log level (WARNING) prints none of this. 'cpu_fallback_seen' matching means: at least one graph node, after CoreML was asked for first, ended up on CPUExecutionProvider anyway -- exactly the fallback this preset exists to catch. See run_target_check()'s render_l2_only_verdict(): because l3.enabled=false for this target, THIS pattern match (not an L3 hit count) is what drives the verdict."
+  },
+  "l3": {
+    "enabled": false,
+    "note": "Deliberately not attempted. ONNX Runtime's acceleration unit is a GRAPH PARTITION, not a small fixed set of named kernel-entry symbols the way kai_run_matmul_* or oneDNN's jit_avx512_* are -- there is no single stable breakpoint target whose hit count would mean 'the CoreML partition executed' (CoreML compiles each partition into a private .mlmodel and hands it to Apple's ML Program runtime out-of-process/out-of-symbol-table via CoreML.framework, not a symbol inside onnxruntime's own binary). L2's per-node partition log is the correct, and sufficient, evidence layer for this target's claim; forcing an L3 layer here would mean breakpointing something that doesn't actually answer the question, which is worse than not having L3 at all."
+  },
+  "workload": {
+    "requires": ["model"],
+    "arg_template": ["-c", "import onnxruntime as ort; so=ort.SessionOptions(); so.log_severity_level=0; so.log_verbosity_level=1; ort.InferenceSession('{model}', sess_options=so, providers=['CoreMLExecutionProvider','CPUExecutionProvider']); print('polygraph_onnxruntime_probe_ok')"],
+    "defaults": {},
+    "note": "{model} must be a real .onnx file. --binary is the python3 interpreter; onnxruntime must be importable by it (use --env PYTHONPATH=... if it's installed to a non-default location, e.g. a `pip install --target` dir, as this preset's own verification run did). providers=['CoreMLExecutionProvider', 'CPUExecutionProvider'] is Darwin-specific; a Linux/CUDA run of this same idea would swap in CUDAExecutionProvider and this target's l2.patterns' literal 'CoreML' strings, which have not been generalized here -- see caveats."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max)",
+      "layers": ["l1", "l2"],
+      "artifact": "onnxruntime 1.28.0 (pip-installed for this check only, --target dir), a purpose-built 3-node ONNX graph (MatMul -> Mod -> MatMul, opset 18) where Mod has no CoreML implementation, forcing a real single-node CPU partition around otherwise-CoreML-eligible MatMuls",
+      "result": "`polygraph check onnxruntime --binary $(which python3) --lib-name .../libonnxruntime.1.28.0.dylib --env PYTHONPATH=/tmp/onnxtest --model fallback_probe.onnx` (run for real): L1 found 1/3 CoreML-related symbols (OrtSessionOptionsAppendExecutionProvider_CoreML) in libonnxruntime.1.28.0.dylib. L2 captured coreml_capability (2 of 3 nodes CoreML-eligible) AND cpu_fallback_seen=1 -- the fallback indicator matched, so verdict = SILENT_FALLBACK, exit 1, headline 'MISMATCH: ... L2 (selection) log shows its own fallback indicator (1)'. Re-run against a graph with only MatMul nodes (no Mod), same harness (coreml_only_probe.onnx) -- produced NO cpu_fallback_seen match, verdict = L2_ADVERTISED_NO_FALLBACK_DETECTED, exit 0, headline 'MATCH: ...'. Both the positive and negative case were observed for real, not assumed. Also confirmed --lib-dir pointed directly at the onnxruntime/capi/ directory resolves the same lib via this target's bare (non-prefixed) glob patterns."
+    }
+  ],
+  "caveats": [
+    "l2.patterns' literal string 'CoreMLExecutionProvider'/'CoreML' are Darwin-specific. A CUDA/TensorRT/DirectML equivalent on Linux/Windows would need its own target JSON (or this one parameterized further) -- not built here; out of scope for this pass, noted rather than silently assumed to generalize.",
+    "L1's single-symbol presence check is weak evidence on its own (it only proves the CoreML EP is COMPILED into this onnxruntime build, not that it selected/ran anything) -- it exists for schema completeness with every other preset, not as this target's real evidence. Read l2, not l1, for this target's actual finding."
+  ]
+}

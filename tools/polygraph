@@ -1,0 +1,407 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Polygraph contributors
+"""polygraph -- generic "did the accelerated code path actually execute?" checker.
+
+tools/verify_dispatch.py answers this question for exactly one thing:
+llama.cpp + KleidiAI. This CLI asks the SAME question -- across the same three
+evidence layers (L1 static symbols, L2 the runtime's own selection log, L3 real
+debugger dispatch hit counts) -- of ANY target described by a declarative JSON
+file under tools/targets/, or of an ad-hoc binary/symbol-regex pair with no
+preset at all. It is a thin, stdlib-only driver: all the actual L1/L2/L3
+mechanics (nm/otool/objdump parsing, the lldb/gdb probes, verdict
+classification) live in tools/verify_dispatch.py and are reused unchanged --
+see its "GENERIC TARGET-DEFINITION SUPPORT" section.
+
+USAGE
+-----
+    polygraph list                        list built-in targets, one per line
+    polygraph explain <target>             what a preset looks for, and why
+    polygraph check <target> --binary PATH [options]
+    polygraph check --binary PATH --symbols REGEX --run "CMD"   # ad-hoc
+
+Common `check` options:
+    --model PATH          shorthand for --param model=PATH (the most common
+                           workload placeholder across the built-in presets)
+    --param KEY=VALUE      fill a workload.arg_template {KEY} placeholder;
+                           repeatable
+    --lib-dir DIR          where to look for the target's shared lib
+                           (default: alongside --binary)
+    --lib-name PATH         explicit path to the shared lib, skips lib_globs
+    --dispatch-regex RE     override the target's own L1/L3 symbol regex
+    --level {1,2,3}         max evidence layer to attempt (default: 3)
+    --l3-debugger {auto,lldb,gdb,none}
+    --l2-timeout SEC / --l3-timeout SEC
+    --env KEY=VALUE         set an env var for the L2/L3 subprocess; repeatable
+    --json                  machine-readable result on stdout, nothing else
+    --quiet                 suppress progress lines on stderr
+
+EXIT CODES (contractual -- CI depends on these)
+    0  advertised capability matches what executed
+    1  mismatch: something claimed acceleration that did not run
+    2  undetermined (missing debugger, no permission, binary not found, or no
+       evidence layer reached deep enough to confirm/refute a claim). Never 0.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import platform
+import shlex
+import sys
+
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, TOOLS_DIR)
+import verify_dispatch as vd  # noqa: E402  (stdlib-only module, see its own header)
+
+
+def log(args, msg: str) -> None:
+    if not getattr(args, "quiet", False):
+        print(msg, file=sys.stderr)
+
+
+def cmd_list(args) -> int:
+    names = vd.list_target_names()
+    if not names:
+        print(f"(no targets found under {vd.TARGETS_DIR})", file=sys.stderr)
+        return 0
+    for name in names:
+        try:
+            target = vd.load_target(name)
+        except FileNotFoundError as e:
+            print(f"{name}\t[error loading: {e}]")
+            continue
+        tested = "tested" if target.get("tested") else "UNTESTED"
+        desc = target.get("description", "(no description)")
+        aliases = target.get("aliases") or []
+        alias_note = f" (aliases: {', '.join(aliases)})" if aliases else ""
+        print(f"{name}\t[{tested}]\t{desc}{alias_note}")
+    return 0
+
+
+def cmd_explain(args) -> int:
+    try:
+        target = vd.load_target(args.target)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+
+    def section(title):
+        print(f"\n{title}")
+        print("-" * len(title))
+
+    print(f"target: {target.get('name', args.target)}")
+    if target.get("aliases"):
+        print(f"aliases: {', '.join(target['aliases'])}")
+    print(f"tested: {bool(target.get('tested'))}")
+    print(f"\n{target.get('description', '(no description)')}")
+    why = target.get("why_it_matters")
+    if why:
+        print(f"\nWhy this matters: {why}")
+
+    l1 = target.get("l1") or {}
+    section("L1 (static)")
+    if not l1.get("enabled", True):
+        print("disabled for this target")
+    else:
+        print(f"scans: {l1.get('scan_target', 'lib')}")
+        print(f"symbol prefix filter: {l1.get('symbol_prefix') or '(none)'}")
+        print(f"dispatch regex: {l1.get('dispatch_regex')}")
+        print(f"family order: {l1.get('family_order') or '(default KleidiAI order)'}")
+        if l1.get("note"):
+            print(f"note: {l1['note']}")
+
+    l2 = target.get("l2") or {}
+    section("L2 (selection log)")
+    if not l2.get("enabled", True):
+        print("disabled for this target")
+    else:
+        for pat in l2.get("patterns") or []:
+            print(f"  [{pat.get('label')}] /{pat.get('regex')}/ (group {pat.get('group', 0)})")
+        if l2.get("advertised_family_label"):
+            print(f"advertised-family match key: {l2['advertised_family_label']}")
+        if l2.get("fallback_indicator_label"):
+            print(f"fallback indicator (used when L3 is disabled): {l2['fallback_indicator_label']}")
+        if l2.get("note"):
+            print(f"note: {l2['note']}")
+
+    l3 = target.get("l3") or {}
+    section("L3 (dispatch)")
+    if not l3.get("enabled", True):
+        print(f"not supported for this target: {l3.get('note', '(no reason given)')}")
+    else:
+        print(f"scans: {l3.get('scan_target', 'lib')}")
+        print(f"dispatch regex: {l3.get('dispatch_regex') or '(falls back to l1.dispatch_regex)'}")
+        if l3.get("note"):
+            print(f"note: {l3['note']}")
+
+    wl = target.get("workload") or {}
+    section("Workload")
+    print(f"required params: {wl.get('requires') or '(none)'}")
+    print(f"argv template: {wl.get('arg_template')}")
+    print(f"defaults: {wl.get('defaults') or '{}'}")
+    if wl.get("note"):
+        print(f"note: {wl['note']}")
+
+    verified = target.get("verified_against") or []
+    if verified:
+        section("Verified against (real artifacts checked while building this preset)")
+        for v in verified:
+            print(f"- {v.get('date', '?')}  {v.get('platform', '?')}  layers={v.get('layers')}")
+            print(f"  artifact: {v.get('artifact')}")
+            print(f"  result:   {v.get('result')}")
+
+    caveats = target.get("caveats") or []
+    if caveats:
+        section("Caveats")
+        for c in caveats:
+            print(f"- {c}")
+
+    return 0
+
+
+def _parse_kv_list(pairs):
+    out = {}
+    for p in pairs or []:
+        if "=" not in p:
+            raise argparse.ArgumentTypeError(f"expected KEY=VALUE, got: {p}")
+        k, v = p.split("=", 1)
+        out[k] = v
+    return out
+
+
+def _render_human_report(res: dict) -> str:
+    lines = [res["headline"], ""]
+    l1 = res.get("l1") or {}
+    if l1.get("available"):
+        lines.append(
+            f"  L1 (static)     {l1.get('matched_symbol_count')}/{l1.get('total_symbol_count')} "
+            f"matching symbols in {os.path.basename(l1.get('artifact') or '?')}   [nm]"
+        )
+    elif l1:
+        lines.append(f"  L1 (static)     unavailable -- {l1.get('error')}")
+
+    l2 = res.get("l2")
+    if l2 is not None:
+        if l2.get("available"):
+            matches = l2.get("matches") or {}
+            if matches:
+                shown = ", ".join(f"{k}={v}" for k, v in list(matches.items())[:6])
+                lines.append(f"  L2 (selection)  {shown}")
+            else:
+                lines.append("  L2 (selection)  ran, no configured pattern matched")
+        else:
+            lines.append(f"  L2 (selection)  unavailable -- {l2.get('error')}")
+
+    l3 = res.get("l3")
+    if l3 is not None:
+        if l3.get("available") and l3.get("completed"):
+            tag = f"[{l3.get('debugger')}]"
+            lines.append(
+                f"  L3 (dispatch)   {l3.get('total_hits')} hits, "
+                f"dominant={l3.get('kernel_family_executed')}   {tag}"
+            )
+        else:
+            lines.append(f"  L3 (dispatch)   unavailable -- {l3.get('error')}")
+
+    lines.append("")
+    lines.append(f"verdict: {res['verdict']}   level_reached: {res['level_reached']}/{res['level_requested']}")
+    lines.append(f"exit {res['exit_code']}")
+    return "\n".join(lines)
+
+
+def _resolve_target_binary(target):
+    """Expand a target's binary_globs for this platform and return (matches, patterns_searched).
+
+    Globs are resolved relative to the current directory first, then to the repo root, so
+    `polygraph check catch-a-liar` works from anywhere in a checkout. Returns every match rather
+    than the first: the caller must refuse to guess between candidates, because which build you
+    probed IS the answer this tool exists to give.
+    """
+    plat_key = "darwin" if platform.system() == "Darwin" else "linux"
+    plat = target.get("platforms", {}).get(plat_key, {})
+    patterns = list(plat.get("binary_globs") or [])
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    seen, matches, searched = set(), [], []
+    for pat in patterns:
+        for base in ("", repo_root) if not os.path.isabs(pat) else (None,):
+            full = pat if base is None else (os.path.join(base, pat) if base else pat)
+            searched.append(full)
+            for hit in sorted(glob.glob(os.path.expanduser(full))):
+                real = os.path.realpath(hit)
+                if os.path.isfile(hit) and real not in seen:
+                    seen.add(real)
+                    matches.append(hit)
+    return matches, searched
+
+
+def cmd_check(args) -> int:
+    adhoc = args.target is None
+    if adhoc:
+        if not args.binary or not args.symbols:
+            print("ERROR: ad-hoc mode requires --binary PATH and --symbols REGEX "
+                  "(optionally --run \"CMD\" for L2/L3)", file=sys.stderr)
+            return 2
+        target = {
+            "name": "adhoc",
+            "tested": False,
+            "platforms": {"darwin": {}, "linux": {}},
+            "l1": {
+                "enabled": True, "scan_target": "binary",
+                "symbol_prefix": None, "dispatch_regex": args.dispatch_regex or args.symbols,
+                "family_order": None,
+            },
+            "l2": {"enabled": bool(args.run), "patterns": [], "advertised_family_label": None},
+            "l3": {
+                "enabled": bool(args.run), "scan_target": "binary",
+                "dispatch_regex": args.dispatch_regex or args.symbols,
+            },
+            "workload": {},
+        }
+        raw_run_cmd = None
+        if args.run:
+            argv = shlex.split(args.run)
+            if not argv:
+                print("ERROR: --run must not be empty", file=sys.stderr)
+                return 2
+            binary_abs = os.path.abspath(args.binary)
+            if os.path.abspath(argv[0]) != binary_abs and os.path.basename(argv[0]) != os.path.basename(args.binary):
+                log(args, f"WARNING: --run's first token ({argv[0]!r}) does not look like --binary "
+                          f"({args.binary!r}); using --binary and --run's remaining arguments")
+            raw_run_cmd = [binary_abs] + argv[1:]
+    else:
+        try:
+            target = vd.load_target(args.target)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        if not target.get("tested", False):
+            log(args, f"WARNING: target {target.get('name', args.target)!r} is marked untested "
+                      f"(never verified against a real artifact) -- results may not be meaningful. "
+                      f"See `polygraph explain {args.target}` for caveats.")
+        if not args.binary:
+            found, searched = _resolve_target_binary(target)
+            if len(found) == 1:
+                args.binary = found[0]
+                log(args, f"# auto-resolved --binary from the target's binary_globs: {args.binary}")
+            elif len(found) > 1:
+                # Ambiguity must never be resolved by guessing: which build you probed is the
+                # whole answer, and picking the wrong one produces a confident wrong verdict.
+                print(f"ERROR: {len(found)} candidate binaries match target "
+                      f"{target.get('name', args.target)!r}; pass --binary to choose:",
+                      file=sys.stderr)
+                for f in found:
+                    print(f"         {f}", file=sys.stderr)
+                return 2
+            else:
+                print(f"ERROR: no binary found for target {target.get('name', args.target)!r}. "
+                      f"Pass --binary PATH explicitly.", file=sys.stderr)
+                if searched:
+                    print("       looked for:", file=sys.stderr)
+                    for pat in searched:
+                        print(f"         {pat}", file=sys.stderr)
+                print(f"       see `polygraph explain {args.target}` for what this target expects.",
+                      file=sys.stderr)
+                return 2
+        raw_run_cmd = None
+
+    params = {}
+    if args.model:
+        params["model"] = args.model
+    try:
+        params.update(_parse_kv_list(args.param))
+    except argparse.ArgumentTypeError as e:
+        print(f"ERROR: --param {e}", file=sys.stderr)
+        return 2
+
+    try:
+        env_overrides = _parse_kv_list(args.env)
+    except argparse.ArgumentTypeError as e:
+        print(f"ERROR: --env {e}", file=sys.stderr)
+        return 2
+
+    if not os.path.isfile(args.binary):
+        print(f"ERROR: --binary not found: {args.binary}", file=sys.stderr)
+        return 2
+
+    log(args, f"# polygraph check {target.get('name', 'adhoc')} -- {vd.platform_id()} / {vd.detect_cpu_brand()}")
+    log(args, f"# binary={os.path.abspath(args.binary)}")
+
+    res = vd.run_target_check(
+        target=target,
+        binary=args.binary,
+        lib_dir=args.lib_dir,
+        lib_name=args.lib_name,
+        params=params,
+        max_level=args.level,
+        l3_debugger=args.l3_debugger,
+        l2_timeout=args.l2_timeout,
+        l3_timeout=args.l3_timeout,
+        env_overrides=env_overrides,
+        raw_run_cmd=raw_run_cmd,
+        implicit_claim=adhoc,
+    )
+
+    if args.json:
+        # Contract: "nothing else on stdout" -- everything else above went to stderr.
+        print(json.dumps(res, indent=2, sort_keys=False))
+    else:
+        print(_render_human_report(res))
+
+    return res["exit_code"]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="polygraph",
+        description="Did the accelerated code path your software claims to use actually execute?",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p_list = sub.add_parser("list", help="list built-in targets, one per line, with a one-line description")
+    p_list.set_defaults(func=cmd_list, quiet=False)
+
+    p_explain = sub.add_parser("explain", help="print what a target preset looks for and why")
+    p_explain.add_argument("target")
+    p_explain.set_defaults(func=cmd_explain, quiet=False)
+
+    p_check = sub.add_parser("check", help="run a built-in target preset, or an ad-hoc binary/symbol check")
+    p_check.add_argument("target", nargs="?", default=None,
+                          help="a built-in target name (see `polygraph list`), or omit for ad-hoc mode")
+    p_check.add_argument("--binary", help="path to the executable to check")
+    p_check.add_argument("--symbols", help="ad-hoc mode: anchored symbol regex (no preset needed)")
+    p_check.add_argument("--run", help="ad-hoc mode: shell command to exercise the workload for L2/L3, "
+                                        "e.g. --run \"/path/to/bin -m model.gguf -p hi -n4\"")
+    p_check.add_argument("--model", help="shorthand for --param model=PATH")
+    p_check.add_argument("--param", action="append", default=[], metavar="KEY=VALUE",
+                          help="fill a workload.arg_template placeholder; repeatable")
+    p_check.add_argument("--lib-dir", default=None, help="dir to search for the target's shared lib")
+    p_check.add_argument("--lib-name", default=None, help="explicit path to the shared lib")
+    p_check.add_argument("--dispatch-regex", default=None,
+                          help="override the target's L1/L3 symbol regex (required with --symbols in ad-hoc mode)")
+    p_check.add_argument("--level", type=int, choices=[1, 2, 3], default=3,
+                          help="max evidence layer to attempt (default: 3)")
+    p_check.add_argument("--l3-debugger", choices=["auto", "lldb", "gdb", "none"], default="auto")
+    p_check.add_argument("--l2-timeout", type=float, default=60.0)
+    p_check.add_argument("--l3-timeout", type=float, default=240.0)
+    p_check.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="repeatable")
+    p_check.add_argument("--json", action="store_true", help="machine-readable result on stdout, nothing else")
+    p_check.add_argument("--quiet", action="store_true", help="suppress progress lines on stderr")
+    p_check.set_defaults(func=cmd_check)
+
+    return ap
+
+
+def main(argv=None) -> int:
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

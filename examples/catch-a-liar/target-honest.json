@@ -1,0 +1,10 @@
+{
+  "name": "catch-a-liar-honest",
+  "description": "Negative control for the catch-a-liar demo: same banner line, same symbols, but this build genuinely calls fast_path_sum(). A detector that always says MISMATCH is worthless -- this is the case that must come back clean.",
+  "build": "cc -O0 -g -o examples/catch-a-liar/build/honest examples/catch-a-liar/liar.c -DACTUALLY_FAST",
+  "binary": "examples/catch-a-liar/build/honest",
+  "symbols": "^fast_path_sum$",
+  "run": "examples/catch-a-liar/build/honest",
+  "expected_exit_code": 0,
+  "expected_verdict_summary": "MATCH: binary prints \"using fast path: yes\" and fast_path_sum() was actually called"
+}

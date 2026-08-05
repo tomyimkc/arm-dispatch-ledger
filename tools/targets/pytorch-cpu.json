@@ -1,0 +1,61 @@
+{
+  "name": "pytorch-cpu",
+  "aliases": [],
+  "tested": false,
+  "description": "PyTorch's oneDNN (formerly MKL-DNN) CPU backend: does a `torch.nn.functional.conv2d`/`matmul`/`linear` call actually reach oneDNN's JIT-compiled AVX512/AVX2 kernel, or does it silently run PyTorch's much slower ATen reference implementation?",
+  "why_it_matters": "oneDNN JIT-selects a kernel family (jit_avx512_core, jit_avx2, jit_sse41, a scalar reference impl, ...) once per process based on cpuid, cached in a static dispatch table -- if that selection silently downgrades (a stale libdnnl.so pinned to an older ISA baseline, a container with AVX512 masked out of /proc/cpuinfo, a conda build compiled generic-x86-64), PyTorch keeps running and keeps producing correct numbers at a large, invisible slowdown -- the exact same shape of bug as this project's KleidiAI headline finding, just on Intel/AMD instead of Arm.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["torch/lib/libtorch_cpu.dylib", "**/torch/lib/libtorch_cpu.dylib"],
+      "lib_globs": []
+    },
+    "linux": {
+      "binary_globs": ["torch/lib/libtorch_cpu.so", "**/torch/lib/libtorch_cpu.so"],
+      "lib_globs": []
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "binary",
+    "symbol_prefix": null,
+    "dispatch_regex": "(jit_avx512|jit_avx2|jit_sse41|jit_uni|dnnl::impl::cpu::x64|_ZN4dnnl4impl3cpu3x64)",
+    "family_order": ["jit_avx512", "jit_avx2", "jit_sse41", "jit_uni"],
+    "note": "Deliberately NOT matching PyTorch's own 'at::*mkldnn_*' ATen operator-surface symbols (at::compositeexplicitautograd::mkldnn_convolution and friends) -- those are the public dispatcher API PyTorch exposes for ANY build (274 of them exist even in a build with oneDNN entirely absent; verified below), not evidence oneDNN's actual JIT kernels are linked in. The regex above targets oneDNN's OWN internal namespace for its JIT-generated x86 kernels (dnnl::impl::cpu::x64::jit_avx512_core_...), which is the layer that actually corresponds to this project's kai_run_matmul_* -- a real, executing, ISA-specific kernel, not a dispatcher stub."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": "isa_hint",
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "isa_hint", "regex": "(?i)(avx512|avx2|isa[:=]\\s*\\S+)", "group": 0},
+      {"label": "onednn_verbose", "regex": "onednn_verbose,.*,(jit_avx512\\w*|jit_avx2\\w*|jit_sse41|ref)", "group": 1}
+    ],
+    "note": "UNTESTED. oneDNN has a real, documented runtime selection log (`DNNL_VERBOSE=1`, lines shaped 'onednn_verbose,exec,cpu,...,jit_avx512_core_amx_...,...') that is the exact L2 analogue of llama.cpp's 'kleidiai: primary q4 kernel feature X' -- but exercising it requires an x86 host with oneDNN actually linked in, which was not available to verify this pass (see caveats)."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "binary",
+    "dispatch_regex": "(jit_avx512|jit_avx2|jit_sse41|jit_uni|dnnl::impl::cpu::x64|_ZN4dnnl4impl3cpu3x64)",
+    "note": "UNTESTED. Same fail-closed breakpoint mechanism as every other preset; untested here because L1 already shows 0 candidate symbols on the only PyTorch build available in this environment (see verified_against) -- run_target_check()'s uninstrumented-probe guard would correctly refuse to run it, so there was nothing further to exercise."
+  },
+  "workload": {
+    "requires": [],
+    "arg_template": ["-c", "import torch,sys; x=torch.randn({batch},3,{size},{size}); w=torch.randn(16,3,3,3); import torch.nn.functional as F; [F.conv2d(x,w) for _ in range({iters})]; print('done')"],
+    "defaults": {"batch": "8", "size": "64", "iters": "50"},
+    "note": "UNTESTED end-to-end (never actually run through polygraph in this pass). Runs the target Python interpreter (--binary should point at a python3 with torch importable) with -c; a real check should also set DNNL_VERBOSE=1 via --env for the L2 pattern to have anything to match."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max)",
+      "layers": ["l1"],
+      "artifact": "torch 2.13.0, official PyPI macOS arm64 wheel (torch-2.13.0-cp314-cp314-macosx_14_0_arm64.whl), pip-installed for this check only, torch/lib/libtorch_cpu.dylib",
+      "result": "`torch.__config__.show()` reports USE_MKLDNN=OFF, USE_MKL=OFF (this wheel uses Apple's Accelerate framework + QNNPACK + NNPACK instead, BLAS_INFO=accelerate). L1 confirms this at the symbol level: 0 matches for the oneDNN-JIT-namespace dispatch_regex above, while a broader 'mkldnn' substring search independently finds 274 matches -- ALL of them at::compositeexplicitautograd::mkldnn_* ATen dispatcher stubs (the public operator surface, present regardless of backend), not oneDNN's own jit_avx512/jit_uni kernel implementations. This precisely confirms the l1.note's distinction with a real, currently-installed artifact: it is architecturally impossible to verify oneDNN AVX512/AVX2 *dispatch* on an Apple Silicon PyTorch build, because oneDNN itself isn't linked into it -- there is nothing here to dispatch. Testing this preset for real requires an x86_64 host with a torch wheel built with USE_MKLDNN=ON (the default for PyPI's own x86_64 Linux/Windows wheels), which this environment does not have."
+    }
+  ],
+  "caveats": [
+    "tested:false is accurate, not conservative-by-default: this preset's core claim (oneDNN AVX512/AVX2 JIT dispatch) cannot be exercised at all on the Apple Silicon host this project was built on, and was not exercised on any other host either. L1 was checked against a real, current PyPI wheel (see verified_against) specifically to CONFIRM it is untestable here, rather than skipping the check and guessing.",
+    "l2/l3/workload are documented from public oneDNN/PyTorch behavior (DNNL_VERBOSE format, F.conv2d as a workload that reaches oneDNN when available) but have never been run. Do not trust hit counts from this preset without independently confirming DNNL_VERBOSE output format against the oneDNN version actually linked into whatever torch build is under test.",
+    "A DWARF-aware or PyTorch-mobile-QNNPACK-focused variant of this preset would be directly testable on THIS Apple Silicon host today (USE_PYTORCH_QNNPACK=ON was confirmed in the same torch.__config__.show() output) -- noted here as a real opportunity, deliberately NOT built into this preset, since it would silently change what the preset's name and description claim to check without being asked to."
+  ]
+}

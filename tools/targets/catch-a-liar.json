@@ -1,0 +1,59 @@
+{
+  "name": "catch-a-liar",
+  "aliases": [],
+  "tested": true,
+  "description": "The whole polygraph idea in ~30 lines of C, no Arm hardware and no model download required: examples/catch-a-liar/liar.c prints \"using fast path: yes\" but (built the default way) never calls fast_path_sum() -- built with -DACTUALLY_FAST, it genuinely does.",
+  "why_it_matters": "This is llama.cpp's KleidiAI banner bug (see llama-cpp-kleidiai) shrunk to a fixture anyone can build and check in under a minute -- see examples/catch-a-liar/README.md and docs/QUICKSTART.md for the full walkthrough. This preset points `polygraph check catch-a-liar` at the SAME fixture examples/catch-a-liar/demo.sh drives via ad-hoc flags, so `polygraph list`/`polygraph explain catch-a-liar` also work, as docs/QUICKSTART.md documents.",
+  "implicit_claim": true,
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["examples/catch-a-liar/build/liar", "build/liar", "liar"],
+      "lib_globs": []
+    },
+    "linux": {
+      "binary_globs": ["examples/catch-a-liar/build/liar", "build/liar", "liar"],
+      "lib_globs": []
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "binary",
+    "symbol_prefix": null,
+    "dispatch_regex": "^_?fast_path_sum$",
+    "family_order": null,
+    "note": "fast_path_sum is present as a real, exported (__attribute__((noinline)), non-static) symbol in BOTH the lying and honest builds -- L1 alone cannot tell them apart, which is the entire point of this fixture (see examples/catch-a-liar/liar.c's header). '_?' handles the Darwin vs Linux leading-underscore difference the same way llama-cpp-cpu-variants.json's regex does."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": null,
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "banner_claim", "regex": "using fast path: (yes|no)", "group": 1}
+    ],
+    "note": "The banner is a print-time claim identical in both builds -- not evidence either way, deliberately not wired to advertised_family_label (see implicit_claim above: the --symbols-equivalent dispatch_regex IS the claim this target checks, not this banner text). Captured anyway so `--json` output shows exactly what a human reading the terminal would see."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "binary",
+    "dispatch_regex": "^_?fast_path_sum$",
+    "note": "The decisive layer: a non-halting breakpoint on fast_path_sum(), auto-continuing, counting real calls. This is the ONLY layer that can tell examples/catch-a-liar/build/liar (0 calls -- MISMATCH) apart from build/honest (1 call -- MATCH)."
+  },
+  "workload": {
+    "requires": [],
+    "arg_template": [],
+    "defaults": {},
+    "note": "liar/honest take no arguments -- the argv template is empty on purpose (just [binary])."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max)",
+      "layers": ["l1", "l2", "l3"],
+      "artifact": "examples/catch-a-liar/liar.c, compiled both ways via examples/catch-a-liar/demo.sh (cc -O0 -g, and -O0 -g -DACTUALLY_FAST)",
+      "result": "`polygraph check catch-a-liar --binary examples/catch-a-liar/build/liar` -- L1: 1 fast_path_sum symbol present (proves nothing by itself, as expected). L2: banner_claim=yes (also identical in both builds). L3: 0 hits -> verdict NO_DISPATCH_OBSERVED, exit 1 (MISMATCH), headline 'MISMATCH: 1 symbol(s) matching ... exist in the binary but 0 ever dispatched'. Same command against .../build/honest: L3 1 hit -> verdict OTHER_DISPATCHED_ADHOC, exit 0 (MATCH). Both directions confirmed for real, matching docs/QUICKSTART.md's expected-exit-code table exactly (liar=1, honest=0) and byte-identical to examples/catch-a-liar/demo.sh's own ad-hoc-mode invocation of the same fixture."
+    }
+  ],
+  "caveats": [
+    "binary_globs default to the 'liar' (lying) build. To check the negative control, pass --binary pointed at examples/catch-a-liar/build/honest directly -- there is no separate 'catch-a-liar-honest' preset entry; the same target JSON and dispatch_regex apply to both, only --binary differs (matching how examples/catch-a-liar/target-honest.json documents the honest case as a separate JSON but demo.sh never actually loads either target.json programmatically -- both are driven by identical ad-hoc-shaped flags this preset also reproduces)."
+  ]
+}

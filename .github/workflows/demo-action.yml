@@ -1,0 +1,246 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# demo-action.yml — the "adopt this in one line" claim, proven live in CI.
+#
+# Reuses this repo's own canonical example, examples/catch-a-liar/liar.c (see
+# that file's header and docs/QUICKSTART.md — a separate, concurrent work
+# package in this same repository): a ~30-line C program compiled two ways
+# from the SAME source file, both printing the identical banner line
+# "using fast path: yes":
+#   - build/liar   (`cc liar.c`)                  — the banner is a lie:
+#                  fast_path_sum() is compiled in but never called.
+#   - build/honest (`cc liar.c -DACTUALLY_FAST`)   — the banner is true:
+#                  fast_path_sum() really is called.
+# This is llama.cpp's real KleidiAI finding (see README.md), shrunk to two
+# functions and no Arm hardware. This workflow does NOT vendor its own copy
+# of that source — it depends on examples/catch-a-liar/liar.c directly, so
+# the local `make demo` walkthrough and this CI demo stay one canonical
+# story, not two that could drift apart.
+#
+# Runs .github/actions/polygraph-check/ (LOCAL relative-path invocation —
+# exactly how a same-repo consumer would use it; that action's own file
+# header documents how the identical action.yml also supports being
+# referenced remotely, e.g. tomyimkc/polygraph/.github/actions/
+# polygraph-check@main, from any external project) against both binaries in
+# AD-HOC mode (--binary/--symbols/--run — no preset needed), and shows the
+# Action telling them apart: a clean PASS on honest, a real, un-masked CI
+# failure on liar. That second, red result is deliberate — see the
+# demo-liar job below for why it is safe to leave genuinely red rather than
+# papered over, and what a judge should read there.
+#
+# CROSS-PACKAGE NOTE: both tools/polygraph (the CLI itself; see docs/CI.md
+# for its full contract) and examples/catch-a-liar/ are built by different
+# work packages in this same repository (see scripts/common.sh's
+# CROSS-PACKAGE CONTRACT for the general pattern this repo uses for that).
+# The `check-deps` job below is a cheap preflight that SKIPS — never fails,
+# never fakes a pass — the two demo jobs whenever either dependency is not
+# yet present. The moment both have landed, this same workflow starts
+# actually running the live demo described above; nothing here needs to
+# change.
+#
+# SECURITY: runs only on push to main (i.e. after human review) and manual
+# workflow_dispatch, on GitHub-hosted runners only (ubuntu-24.04-arm, a
+# free hosted Arm64 runner — the same lane verify-free-arm64.yml already
+# uses and documents as available to this public repo; override via the
+# POLYGRAPH_DEMO_RUNNER repository variable if that ever changes). No
+# self-hosted runner is used here, so unlike verify-macos-arm64.yml /
+# verify-spark-aarch64.yml this file's trigger set is not a security
+# concern — it is intentionally NOT run on pull_request purely to keep this
+# demo (and its one deliberately-red job) out of every contributor's PR
+# checks list; workflow_dispatch lets anyone with write access re-run it
+# on demand.
+
+name: demo-action
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/polygraph-check/**"
+      - ".github/workflows/demo-action.yml"
+      - "tools/polygraph"
+      - "examples/catch-a-liar/liar.c"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-action-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-deps:
+    name: "Preflight: are tools/polygraph and examples/catch-a-liar/ present yet?"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - name: Checkout (tools/ and examples/ only)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tools
+            examples
+          sparse-checkout-cone-mode: false
+
+      - name: Check for both dependencies
+        id: check
+        run: |
+          missing=()
+          [[ -f tools/polygraph ]] || missing+=("tools/polygraph")
+          [[ -f examples/catch-a-liar/liar.c ]] || missing+=("examples/catch-a-liar/liar.c")
+          if [[ "${#missing[@]}" -eq 0 ]]; then
+            echo "available=true" >>"$GITHUB_OUTPUT"
+            echo "both dependencies present — the live demo jobs below will run."
+          else
+            echo "available=false" >>"$GITHUB_OUTPUT"
+            echo "::notice::missing: ${missing[*]} (sibling work packages in this repo, built concurrently — see this file's header comment). Skipping the live demo jobs; they will start running automatically once both land."
+          fi
+
+  build-fixtures:
+    name: Build the liar / honest demo binaries
+    needs: check-deps
+    if: needs.check-deps.outputs.available == 'true'
+    runs-on: ${{ vars.POLYGRAPH_DEMO_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install a C compiler
+        run: |
+          if command -v cc >/dev/null 2>&1; then
+            echo "cc already present: $(command -v cc)"
+          else
+            sudo apt-get update -y -qq
+            sudo apt-get install -y -qq --no-install-recommends gcc libc6-dev
+          fi
+
+      - name: Compile examples/catch-a-liar/liar.c two ways
+        # Same two invocations examples/catch-a-liar/target.json and
+        # target-honest.json document as this fixture's canonical build
+        # commands (kept in sync by hand — that JSON pair is a different
+        # work package's file).
+        run: |
+          set -euo pipefail
+          mkdir -p demo-bin
+          cc -O0 -g -o demo-bin/liar   examples/catch-a-liar/liar.c
+          cc -O0 -g -o demo-bin/honest examples/catch-a-liar/liar.c -DACTUALLY_FAST
+          chmod +x demo-bin/liar demo-bin/honest
+          echo "built:"
+          ls -l demo-bin/
+          echo "both binaries print the identical banner line -- that line proves nothing:"
+          ./demo-bin/liar
+          ./demo-bin/honest
+          nm demo-bin/liar   | grep fast_path_sum
+          nm demo-bin/honest | grep fast_path_sum
+
+      - name: Upload fixture binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: polygraph-demo-fixtures
+          path: demo-bin/
+          if-no-files-found: error
+          retention-days: 7
+
+  demo-honest:
+    name: "demo: honest binary (expected: PASS)"
+    needs: build-fixtures
+    runs-on: ${{ vars.POLYGRAPH_DEMO_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download fixture binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: polygraph-demo-fixtures
+          path: demo-bin
+
+      - name: Mark binaries executable
+        run: chmod +x demo-bin/liar demo-bin/honest
+
+      - name: "Run polygraph-check (expected verdict: match)"
+        id: polygraph
+        uses: ./.github/actions/polygraph-check
+        with:
+          binary: ${{ github.workspace }}/demo-bin/honest
+          symbols: '^fast_path_sum$'
+          run: ${{ github.workspace }}/demo-bin/honest
+          level: "3"
+          fail-on: mismatch
+
+      - name: Show verdict
+        run: echo "verdict=${{ steps.polygraph.outputs.verdict }} level-reached=${{ steps.polygraph.outputs.level-reached }}"
+
+  demo-liar:
+    name: "demo: liar binary (expected: Action catches a MISMATCH)"
+    needs: build-fixtures
+    runs-on: ${{ vars.POLYGRAPH_DEMO_RUNNER || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 5
+    # This job's "Run polygraph-check" step is EXPECTED to fail — that is
+    # the whole point of this workflow (see the file header). build/liar
+    # genuinely compiles in fast_path_sum() but never calls it, and
+    # fail-on: mismatch (the Action's default) correctly turns that real
+    # mismatch into a real, non-zero step exit. continue-on-error here
+    # keeps the overall WORKFLOW conclusion green (so this repo's Actions
+    # badge does not read as broken) while this job's own status still
+    # renders as a distinct, clickable failure in the Actions UI — open it
+    # and read the step summary: "verdict ... MISMATCH" is the tool
+    # catching a real defect, not a bug in this workflow.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download fixture binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: polygraph-demo-fixtures
+          path: demo-bin
+
+      - name: Mark binaries executable
+        run: chmod +x demo-bin/liar demo-bin/honest
+
+      - name: "Run polygraph-check (expected verdict: mismatch)"
+        id: polygraph
+        uses: ./.github/actions/polygraph-check
+        with:
+          binary: ${{ github.workspace }}/demo-bin/liar
+          symbols: '^fast_path_sum$'
+          run: ${{ github.workspace }}/demo-bin/liar
+          level: "3"
+          fail-on: mismatch
+
+      - name: Show verdict
+        if: always()
+        run: echo "verdict=${{ steps.polygraph.outputs.verdict }} level-reached=${{ steps.polygraph.outputs.level-reached }}"
+
+  summary:
+    name: Demo summary
+    needs: [check-deps, demo-honest, demo-liar]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Write summary
+        env:
+          DEPS_AVAILABLE: ${{ needs.check-deps.outputs.available }}
+          HONEST_RESULT: ${{ needs.demo-honest.result }}
+          LIAR_RESULT: ${{ needs.demo-liar.result }}
+        run: |
+          {
+            echo "## demo-action summary"
+            echo
+            if [[ "$DEPS_AVAILABLE" != "true" ]]; then
+              echo "tools/polygraph and/or examples/catch-a-liar/liar.c are not both present in this checkout yet — the live demo is skipped and will start running automatically once they land. See this file's CROSS-PACKAGE NOTE."
+            else
+              echo "| job | expected | actual |"
+              echo "|---|---|---|"
+              echo "| demo-honest | success | $HONEST_RESULT |"
+              echo "| demo-liar | failure (deliberate — proves detection) | $LIAR_RESULT |"
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,61 @@
+{
+  "name": "whisper-cpp",
+  "aliases": [],
+  "tested": true,
+  "description": "whisper.cpp's ggml CPU backend -- the same kai_run_matmul_*/KleidiAI question as llama-cpp-kleidiai, asked of a sibling ggml-based project that ships its OWN CPU backend build (not llama.cpp's), and that (unlike llama.cpp in this repo's builds) dynamically dlopen's its backend and logs the fact.",
+  "why_it_matters": "whisper.cpp shares ggml with llama.cpp but is packaged and built independently (its own CMake flags, its own release process, its own Homebrew/distro formula) -- KleidiAI being on in one does not imply anything about the other. This preset also demonstrates a mechanism the kleidiai/cpu-variants presets never exercise: newer ggml builds (GGML_BACKEND_DL=ON, the mechanism this Homebrew formula uses) print a real 'load_backend: loaded CPU backend from <path>' line at startup -- a genuine, generalizable L2 signal for which backend .so got loaded, independent of KleidiAI-specific log lines.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["whisper-cli", "bin/whisper-cli"],
+      "lib_globs": ["libggml-cpu.dylib", "libggml-cpu*.dylib", "libexec/libggml-cpu.so", "../libexec/libggml-cpu.so", "**/libggml-cpu.so"]
+    },
+    "linux": {
+      "binary_globs": ["whisper-cli", "bin/whisper-cli"],
+      "lib_globs": ["libggml-cpu.so", "libggml-cpu*.so*", "libexec/libggml-cpu.so", "../libexec/libggml-cpu.so", "**/libggml-cpu.so"]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "lib",
+    "symbol_prefix": "kai_",
+    "dispatch_regex": "^kai_run_matmul",
+    "family_order": ["sme2", "sme", "sve2", "sve", "i8mm", "dotprod", "neon"],
+    "note": "Same regex/family order as llama-cpp-kleidiai -- same ggml KleidiAI integration, different project's build. A Homebrew-installed whisper-cpp's CPU backend lib is NOT next to the whisper-cli binary (it lives in the separate `ggml` formula's keg, e.g. /opt/homebrew/Cellar/ggml/<version>/libexec/libggml-cpu.so) -- lib_globs above cover a same-directory (source-build) layout; for a Homebrew install, pass --lib-name explicitly (see verified_against) or --lib-dir pointed at the ggml keg's libexec/."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": "advertised_family",
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "load_backend_cpu", "regex": "load_backend: loaded CPU backend from (\\S+)", "group": 1},
+      {"label": "advertised_family", "regex": "kleidiai: primary q4 kernel feature (\\S+)", "group": 1},
+      {"label": "system_info", "regex": "system_info:.*", "group": 0}
+    ],
+    "note": "'load_backend_cpu' is the signal actually expected to fire on a GGML_BACKEND_DL build (verified below); 'advertised_family' mirrors llama-cpp-kleidiai's pattern for a source build with KleidiAI on, but is NOT expected to fire on the stock Homebrew formula (no --enable-kleidiai-style flag in that formula as of this check -- see verified_against)."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "lib",
+    "dispatch_regex": "^kai_run_matmul",
+    "note": "Same fail-closed breakpoint mechanism as llama-cpp-kleidiai. On the stock Homebrew build (0 kai_ symbols, see l1), run_target_check()'s pre-flight enumerate_dispatch_symbols() guard correctly refuses to launch an uninstrumented probe -- verified below. A from-source whisper.cpp build with -DGGML_CPU_KLEIDIAI=ON should be expected to behave like llama-cpp-kleidiai's L3 (real, non-zero hits), but that specific positive case has not been built/tested here (see caveats)."
+  },
+  "workload": {
+    "requires": [],
+    "arg_template": ["--help"],
+    "defaults": {},
+    "note": "whisper-cli --help needs no model/audio file and still exercises backend loading + prints system_info (confirmed below) -- a genuinely lower-friction smoke check than llama-cli's workload, which requires a real .gguf. A full transcription workload (`-m ggml-base.bin -f audio.wav`) would additionally exercise L3 with real inference if run against a build that actually has kai_run_matmul symbols; not required for --help-only L1/L2 verification."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max)",
+      "layers": ["l1", "l2", "l3"],
+      "artifact": "Homebrew whisper-cpp 1.9.2 (bottled) + its `ggml` formula dependency 0.18.1, bin/whisper-cli + libexec/libggml-cpu.so",
+      "result": "`polygraph check whisper-cpp --binary .../whisper-cli --lib-name .../ggml/0.18.1/libexec/libggml-cpu.so` (run for real, --help workload, no model needed): L1: 0/0 kai_-prefixed symbols (this formula is not built with KleidiAI; a separate, unfiltered nm count independently found 403 total exported symbols in the same lib, zero of them kai_-prefixed). L2: load_backend_cpu matched with value '/Users/.../ggml/0.18.1/libexec/libggml-cpu.so' -- confirms the GGML_BACKEND_DL log line is real and this preset's regex for it is correct; advertised_family did not match (expected, no KleidiAI). L3: enumerate_dispatch_symbols() found 0 candidates and run_target_check() correctly refused to launch lldb (error 'no symbols matching ... refusing to run an uninstrumented probe'), matching L1's 0-symbol finding rather than reporting a misleading L3 pass or a silent 0 -- verdict L3_UNAVAILABLE, exit 2, not a false 0-and-fine."
+    }
+  ],
+  "caveats": [
+    "The positive-dispatch case (a whisper.cpp build WITH KleidiAI compiled in, producing real non-zero L3 hits the way llama-cpp-kleidiai's verified_against does) was not built or tested here -- only the stock Homebrew formula (KleidiAI off) was available. The regex/mechanism is identical to llama-cpp-kleidiai's, which IS verified positive, so this is a low-risk gap, but it is a gap.",
+    "Homebrew's multi-keg layout (whisper-cli in one Cellar path, libggml-cpu.so in a separate `ggml` formula's keg) means the auto-relative lib_globs will not find the lib without --lib-name/--lib-dir on a Homebrew install specifically; a self-built or official-tarball layout (bin/+lib/ side by side, matching llama.cpp's) would resolve automatically."
+  ]
+}

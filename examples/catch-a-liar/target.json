@@ -1,0 +1,10 @@
+{
+  "name": "catch-a-liar",
+  "description": "30-line C program that prints \"using fast path: yes\" but actually runs the O(n) fallback -- the same silent-fallback failure mode as llama.cpp's KleidiAI banner (see the repo README), with no Arm hardware and no model download required.",
+  "build": "cc -O0 -g -o examples/catch-a-liar/build/liar examples/catch-a-liar/liar.c",
+  "binary": "examples/catch-a-liar/build/liar",
+  "symbols": "^fast_path_sum$",
+  "run": "examples/catch-a-liar/build/liar",
+  "expected_exit_code": 1,
+  "expected_verdict_summary": "MISMATCH: binary prints \"using fast path: yes\" but fast_path_sum() was never called (0 hits)"
+}

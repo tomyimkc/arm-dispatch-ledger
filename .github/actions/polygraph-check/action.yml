@@ -1,0 +1,344 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# polygraph-check — reusable composite Action wrapping `tools/polygraph
+# check` (see docs/CI.md for the full CLI contract). Adopt with:
+#
+#   - uses: tomyimkc/polygraph/.github/actions/polygraph-check@main
+#     with:
+#       target: kleidiai
+#       binary: build/bin/llama-cli   # optional, preset auto-detects
+#       fail-on: mismatch             # mismatch | never
+#
+# HOW THIS ACTION FINDS `tools/polygraph` (no separate checkout step, no
+# network call, never version-skewed): `$GITHUB_ACTION_PATH` always points at
+# THIS action's own directory (.github/actions/polygraph-check) at exactly
+# the ref/commit this action was resolved from. That is true whether the
+# caller used a local relative-path reference (`uses: ./.github/actions/
+# polygraph-check` — this repo's own demo-action.yml does this; the whole
+# repo is already checked out) or a remote `owner/repo/subdir@ref` reference
+# from an external consumer — GitHub Actions downloads the WHOLE source
+# repository for a subdirectory-referenced action before running it, then
+# points `$GITHUB_ACTION_PATH` at the subdirectory. So three levels up from
+# here is always this repository's root, and `tools/polygraph` found there
+# is always the SAME version this action.yml itself shipped with. See the
+# "Locate tools/polygraph" step below.
+#
+# CROSS-PACKAGE NOTE: tools/polygraph is a sibling deliverable built by a
+# different work package in this same repository (see scripts/common.sh's
+# CROSS-PACKAGE CONTRACT for the general pattern this repo uses for that).
+# If it is missing entirely, that is an environment/integration problem —
+# not a verdict — and this action fails loudly regardless of `fail-on` (see
+# the "Enforce result" step). `fail-on` governs ONLY what happens once a
+# real check actually ran: it never silently turns "the tool isn't even
+# there" into a false green.
+#
+# EXIT-CODE CONTRACT this action propagates from `tools/polygraph check`
+# (see docs/CI.md):
+#   0 — advertised capability matches what executed
+#   1 — mismatch: something claimed acceleration that did not run
+#   2 — undetermined (missing debugger, no permission, binary not found).
+#       Never silently 0.
+# With the default `fail-on: mismatch`, this action's own step exits
+# non-zero for BOTH 1 and 2 (an undetermined result is not a pass). Set
+# `fail-on: never` to always exit 0 and inspect the `verdict` /
+# `level-reached` outputs yourself instead.
+
+name: "Polygraph dispatch check"
+description: >-
+  Verify that an advertised accelerated code path (e.g. KleidiAI kernels in a
+  llama.cpp build) actually executed — not just that its symbols exist in the
+  binary. Wraps tools/polygraph check; see docs/CI.md.
+author: "Polygraph contributors"
+
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  target:
+    description: >-
+      Name of a built-in polygraph target/preset (see `tools/polygraph
+      list`), e.g. "kleidiai", passed as the CLI's positional
+      <target> argument. Mutually exclusive with the ad-hoc binary/symbols/
+      run inputs below: set EITHER target OR (binary + symbols + run).
+    required: false
+    default: ""
+  binary:
+    description: >-
+      Path to the binary to check. Optional in preset mode (the preset
+      auto-detects it); required in ad-hoc mode.
+    required: false
+    default: ""
+  symbols:
+    description: >-
+      Anchored regex of the accelerated-kernel symbol(s) to look for.
+      Ad-hoc mode only — ignored when `target` is set.
+    required: false
+    default: ""
+  run:
+    description: >-
+      Shell command that exercises the binary under test. Ad-hoc mode only —
+      ignored when `target` is set.
+    required: false
+    default: ""
+  level:
+    description: >-
+      Max verification level to attempt: 1 (static symbols), 2 (the
+      runtime's own kernel-selection log lines), or 3 (real debugger
+      breakpoint hit counts). Default 3; the tool falls back gracefully
+      (and says so) if a level can't be reached on this runner.
+    required: false
+    default: "3"
+  fail-on:
+    description: >-
+      "mismatch" (default): this action's step fails whenever
+      `tools/polygraph check` exits non-zero (verdict is a mismatch OR
+      undetermined). "never": always exit 0; read the `verdict` /
+      `level-reached` outputs yourself.
+    required: false
+    default: "mismatch"
+
+outputs:
+  verdict:
+    description: >-
+      The polygraph verdict string from the tool's --json output (e.g.
+      "MATCH" / "MISMATCH" / "NO_DISPATCH_OBSERVED" / "SILENT_FALLBACK"), or
+      "TOOL_NOT_AVAILABLE" if tools/polygraph could not be found at all.
+    value: ${{ steps.check.outputs.verdict }}
+  level-reached:
+    description: >-
+      Highest verification level actually reached (1, 2, or 3) — may be
+      lower than requested if a level gracefully degraded. "0" if
+      tools/polygraph was not available.
+    value: ${{ steps.check.outputs.level-reached }}
+  json-path:
+    description: >-
+      Runner-local path to the raw `--json` result file this run produced.
+      Empty if tools/polygraph was not available. Upload it as a workflow
+      artifact yourself if you want to keep it.
+    value: ${{ steps.check.outputs.json-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        BINARY: ${{ inputs.binary }}
+        SYMBOLS: ${{ inputs.symbols }}
+        RUN_CMD: ${{ inputs.run }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        LEVEL: ${{ inputs.level }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$TARGET" ]] && { [[ -z "$BINARY" ]] || [[ -z "$SYMBOLS" ]] || [[ -z "$RUN_CMD" ]]; }; then
+          echo "::error::polygraph-check: set either 'target' (a built-in preset name, e.g. kleidiai) or all three of 'binary' + 'symbols' + 'run' for ad-hoc mode. See docs/CI.md." >&2
+          exit 1
+        fi
+        case "$FAIL_ON" in
+          mismatch|never) ;;
+          *)
+            echo "::error::polygraph-check: 'fail-on' must be 'mismatch' or 'never', got '$FAIL_ON'." >&2
+            exit 1
+            ;;
+        esac
+        case "$LEVEL" in
+          1|2|3) ;;
+          *)
+            echo "::error::polygraph-check: 'level' must be 1, 2, or 3, got '$LEVEL'." >&2
+            exit 1
+            ;;
+        esac
+
+    - name: Install gdb if absent (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -uo pipefail
+        if command -v gdb >/dev/null 2>&1; then
+          echo "gdb already present: $(command -v gdb)"
+          exit 0
+        fi
+        echo "gdb not found. Level 3 (real debugger breakpoint hit counts) needs it on Linux (lldb is used automatically on macOS)."
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "::notice::no apt-get on this Linux runner (not Debian/Ubuntu-based); skipping auto-install. Level 3 will gracefully degrade rather than fail this action."
+          exit 0
+        fi
+        if [[ "$(id -u)" == "0" ]]; then
+          SUDO=()
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+          SUDO=(sudo)
+        else
+          SUDO=()
+          echo "::warning::apt-get is present but this runner has neither root nor passwordless sudo (common on some self-hosted runners — see this repo's verify-macos-arm64.yml / verify-spark-aarch64.yml for why we never assume install permissions on a physical machine). Skipping auto-install; Level 3 will gracefully degrade instead of failing."
+          exit 0
+        fi
+        if "${SUDO[@]}" apt-get update -y -qq && "${SUDO[@]}" apt-get install -y -qq --no-install-recommends gdb; then
+          echo "gdb installed."
+        else
+          echo "::warning::gdb install failed; Level 3 will gracefully degrade rather than fail this action."
+        fi
+
+    - name: Locate tools/polygraph
+      id: locate
+      shell: bash
+      run: |
+        set -uo pipefail
+        action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd)"
+        bin="${action_root}/tools/polygraph"
+        if [[ -f "$bin" ]]; then
+          echo "found=true" >>"$GITHUB_OUTPUT"
+          echo "bin=$bin" >>"$GITHUB_OUTPUT"
+          echo "found tools/polygraph at $bin"
+        else
+          echo "found=false" >>"$GITHUB_OUTPUT"
+          echo "bin=" >>"$GITHUB_OUTPUT"
+          echo "::warning::tools/polygraph not found at $bin (repository root: $action_root)."
+        fi
+
+    - name: Run tools/polygraph check
+      id: check
+      shell: bash
+      continue-on-error: true
+      env:
+        POLYGRAPH_FOUND: ${{ steps.locate.outputs.found }}
+        POLYGRAPH_BIN: ${{ steps.locate.outputs.bin }}
+        POLYGRAPH_TARGET: ${{ inputs.target }}
+        POLYGRAPH_BINARY: ${{ inputs.binary }}
+        POLYGRAPH_SYMBOLS: ${{ inputs.symbols }}
+        POLYGRAPH_RUN: ${{ inputs.run }}
+        POLYGRAPH_LEVEL: ${{ inputs.level }}
+      run: |
+        set -uo pipefail   # deliberately NOT -e: this step must always reach
+                             # its own `exit "$tool_exit"` at the bottom so
+                             # outputs are written before continue-on-error
+                             # decides whether the composite as a whole fails
+                             # (see the "Enforce result" step).
+        if [[ "$POLYGRAPH_FOUND" != "true" ]]; then
+          echo "::error::polygraph-check: tools/polygraph not available — see the 'Locate tools/polygraph' step above. This is an environment/integration problem, not a verdict." >&2
+          {
+            echo "verdict=TOOL_NOT_AVAILABLE"
+            echo "level-reached=0"
+            echo "json-path="
+          } >>"$GITHUB_OUTPUT"
+          echo "tool_exit=127" >>"$GITHUB_OUTPUT"
+          exit 1
+        fi
+
+        run_cmd=("$POLYGRAPH_BIN")
+        [[ -x "$POLYGRAPH_BIN" ]] || run_cmd=(python3 "$POLYGRAPH_BIN")
+
+        args=(check)
+        if [[ -n "$POLYGRAPH_TARGET" ]]; then
+          args+=("$POLYGRAPH_TARGET")
+          [[ -n "$POLYGRAPH_BINARY" ]] && args+=(--binary "$POLYGRAPH_BINARY")
+        else
+          args+=(--binary "$POLYGRAPH_BINARY" --symbols "$POLYGRAPH_SYMBOLS" --run "$POLYGRAPH_RUN")
+        fi
+        args+=(--level "$POLYGRAPH_LEVEL" --json)
+
+        out_dir="${RUNNER_TEMP:-/tmp}/polygraph-check"
+        mkdir -p "$out_dir"
+        json_path="$out_dir/result-$$-$RANDOM.json"
+        log_path="${json_path%.json}.log"
+
+        echo "running: ${run_cmd[*]} ${args[*]}" >&2
+        "${run_cmd[@]}" "${args[@]}" >"$json_path" 2>"$log_path"
+        tool_exit=$?
+        echo "tools/polygraph exited $tool_exit — full log at $log_path" >&2
+        if [[ "$tool_exit" != "0" ]]; then
+          tail -n 40 "$log_path" >&2 || true
+        fi
+
+        py_out="unknown|unknown"
+        if [[ -s "$json_path" ]]; then
+          py_out="$(python3 - "$json_path" <<'PY'
+        import json
+        import sys
+
+        path = sys.argv[1]
+        verdict = "unknown"
+        level = "unknown"
+        try:
+            with open(path) as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                for key in ("verdict", "result", "status"):
+                    if key in data:
+                        verdict = str(data[key])
+                        break
+                for key in ("level_reached", "level-reached", "max_level_reached", "max_level", "level"):
+                    if key in data:
+                        level = str(data[key])
+                        break
+        except Exception:
+            pass
+        print(f"{verdict}|{level}")
+        PY
+          )"
+        fi
+        IFS='|' read -r verdict level_reached <<<"$py_out"
+
+        {
+          echo "verdict=$verdict"
+          echo "level-reached=$level_reached"
+          echo "json-path=$json_path"
+        } >>"$GITHUB_OUTPUT"
+        echo "tool_exit=$tool_exit" >>"$GITHUB_OUTPUT"
+        exit "$tool_exit"
+
+    - name: Write step summary
+      if: always()
+      shell: bash
+      env:
+        FOUND: ${{ steps.locate.outputs.found }}
+        VERDICT: ${{ steps.check.outputs.verdict }}
+        LEVEL_REACHED: ${{ steps.check.outputs.level-reached }}
+        JSON_PATH: ${{ steps.check.outputs.json-path }}
+        TOOL_EXIT: ${{ steps.check.outputs.tool_exit }}
+        TARGET: ${{ inputs.target }}
+        BINARY: ${{ inputs.binary }}
+        LEVEL_REQ: ${{ inputs.level }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        {
+          if [[ "$FOUND" != "true" ]]; then
+            echo "## Polygraph check: tools/polygraph not available"
+            echo
+            echo "This action could not find \`tools/polygraph\` in its own repository checkout, so no check ran. See [docs/CI.md](https://github.com/tomyimkc/polygraph/blob/main/docs/CI.md)."
+          else
+            echo "## Polygraph check: verdict \`$VERDICT\`"
+            echo
+            echo "| field | value |"
+            echo "|---|---|"
+            [[ -n "$TARGET" ]] && echo "| target | \`$TARGET\` |"
+            [[ -n "$BINARY" ]] && echo "| binary | \`$BINARY\` |"
+            echo "| verdict | \`$VERDICT\` |"
+            echo "| level requested | $LEVEL_REQ |"
+            echo "| level reached | $LEVEL_REACHED |"
+            echo "| tool exit code | $TOOL_EXIT |"
+            echo "| fail-on | $FAIL_ON |"
+            [[ -n "$JSON_PATH" ]] && echo "| raw JSON (runner-local) | \`$JSON_PATH\` |"
+          fi
+        } >>"$GITHUB_STEP_SUMMARY"
+
+    - name: Enforce result
+      if: always()
+      shell: bash
+      env:
+        FOUND: ${{ steps.locate.outputs.found }}
+        CHECK_OUTCOME: ${{ steps.check.outcome }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        VERDICT: ${{ steps.check.outputs.verdict }}
+      run: |
+        set -uo pipefail
+        if [[ "$FOUND" != "true" ]]; then
+          echo "::error::polygraph-check: tools/polygraph was not found — see the step summary above. This always fails the action, independent of 'fail-on' (which only governs verdict policy once a check actually ran)." >&2
+          exit 1
+        fi
+        if [[ "$CHECK_OUTCOME" == "failure" && "$FAIL_ON" == "mismatch" ]]; then
+          echo "::error::polygraph-check: verdict '$VERDICT' — failing because fail-on=mismatch (default). Set fail-on: never to inspect the verdict/level-reached outputs yourself instead." >&2
+          exit 1
+        fi
+        echo "polygraph-check: done (verdict=$VERDICT, fail-on=$FAIL_ON, tool outcome=$CHECK_OUTCOME)"

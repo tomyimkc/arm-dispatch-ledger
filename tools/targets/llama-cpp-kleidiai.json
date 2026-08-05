@@ -1,0 +1,71 @@
+{
+  "name": "llama-cpp-kleidiai",
+  "aliases": ["kleidiai"],
+  "tested": true,
+  "description": "llama.cpp's Arm KleidiAI SME2/SVE2 matmul kernels (kai_run_matmul_*) -- the target this whole project was built around.",
+  "why_it_matters": "llama.cpp's own startup banner prints 'KLEIDIAI = 1' and 'kleidiai: primary q4 kernel feature SME2' at model load, but neither line proves the SME2 kernel ever executes a single matmul. This is the project's headline finding: an official release build compiles ZERO kai_run_matmul symbols while still being able to print this banner if built differently, and even a from-source build with KleidiAI genuinely compiled in silently collapses to NEON for decode above the chip's SME thread cap. See results/GROUND-TRUTH-DISPATCH.md and the upstream issue ggml-org/llama.cpp#26547.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["llama-cli", "bin/llama-cli"],
+      "lib_globs": ["libggml-cpu.dylib", "libggml-cpu*.dylib"]
+    },
+    "linux": {
+      "binary_globs": ["llama-cli", "bin/llama-cli"],
+      "lib_globs": ["libggml-cpu.so", "libggml-cpu*.so*"]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "lib",
+    "symbol_prefix": "kai_",
+    "dispatch_regex": "^kai_run_matmul",
+    "family_order": ["sme2", "sme", "sve2", "sve", "i8mm", "dotprod", "neon"],
+    "note": "Same regex and family order tools/verify_dispatch.py has always used (DEFAULT_DISPATCH_REGEX / _FAMILY_ORDER) -- this preset is asserted to reproduce that tool's L1 result exactly, not just approximate it."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": "advertised_family",
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "advertised_family", "regex": "kleidiai: primary q4 kernel feature (\\S+)", "group": 1},
+      {"label": "primary_kernel_feature_q8", "regex": "kleidiai: primary q8 kernel feature (\\S+)", "group": 1},
+      {"label": "sme_enabled", "regex": "kleidiai: SME2? enabled \\(([^)]*)\\)", "group": 1},
+      {"label": "sme_disabled", "regex": "kleidiai: SME disabled", "group": 0},
+      {"label": "buffer_type_fallback", "regex": "cannot be used with preferred buffer type (\\S+)", "group": 1},
+      {"label": "no_kernel_warning", "regex": "kleidiai: no kernel for tensor type (\\S+), not accelerated", "group": 1},
+      {"label": "system_info", "regex": "system_info:.*", "group": 0}
+    ],
+    "note": "'advertised_family' mirrors verify_dispatch.py's run_l2_select()/compute_verdict() exactly: the q4 primary_kernel_feature line is what 'advertised' means for this target, because the models this project measured are all Q4_0/Q8_0."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "lib",
+    "dispatch_regex": "^kai_run_matmul",
+    "note": "Regex breakpoint (lldb) or per-symbol pending breakpoints (gdb), auto-continuing, non-halting -- see tools/dispatch_probe.lldb / tools/dispatch_probe.gdb. Anchored at the symbol start on purpose: an unanchored pattern also matches the compiler-generated template thunk and double-counts (see dispatch_probe.lldb's header)."
+  },
+  "workload": {
+    "requires": ["model"],
+    "arg_template": ["-m", "{model}", "-p", "{prompt}", "-n", "{n_predict}", "-no-cnv", "-st", "--simple-io", "-t", "{threads}", "--verbose"],
+    "defaults": {"prompt": "Hello.", "n_predict": "4", "threads": "2"},
+    "note": "Same flag shape run_l2_select()/run_l3_lldb()/run_l3_gdb() have always built. threads=2 by default because the M4 Max's sme_thread_cap is 2 (see results/GROUND-TRUTH-DISPATCH.md) -- at this thread count the plain SME2 path fires on the short default prompt; sweep --param threads=8 to reproduce the silent-fallback finding."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max)",
+      "layers": ["l1", "l2", "l3"],
+      "artifact": "locally built /tmp/llama.cpp/build/bin/llama-cli + libggml-cpu.0.18.0.dylib (-DGGML_CPU_KLEIDIAI=ON), model /tmp/ggufs/q05.gguf (Qwen2.5-0.5B-Instruct-Q4_0)",
+      "result": "`polygraph check llama-cpp-kleidiai --binary .../llama-cli --model q05.gguf --param threads=2` and `verify_dispatch.py --binary ... --model ... --threads 2 --workloads decode_short` produced the SAME verdict (SME2_DISPATCHED) and a BYTE-IDENTICAL l3.hits_by_symbol dict (17 kai_run_matmul_* symbols, 3 non-zero, summing to 5826 hits both ways; L1 found 17/264 kai_-prefixed symbols matching ^kai_run_matmul). Compared programmatically, not by eye."
+    },
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max), scanning a linux/aarch64 artifact",
+      "layers": ["l1"],
+      "artifact": "official llama.cpp b10276 ubuntu-arm64 release tarball (/tmp/llamacpp_investigation), and the official macos-arm64 release tarball",
+      "result": "L1 correctly reports 0/0 kai_run_matmul symbols on BOTH official release artifacts (KleidiAI is off by default in releases) -- confirms the project's headline finding independent of this repo's own from-source build, and confirms this preset fails closed (not silently 0) rather than guessing."
+    }
+  ],
+  "caveats": [
+    "L2's 'advertised_family' is read from the q4 primary-kernel-feature line specifically; a model quantized as something other than Q4_0/Q8_0 will show primary_kernel_feature keyed under a different tensor type and 'advertised' will read as null (verdict becomes *_EXECUTED_NO_ADVERTISED_FEATURE, not a false MISMATCH)."
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "name": "ollama",
+  "aliases": [],
+  "tested": true,
+  "description": "Ollama's bundled ggml CPU matmul dispatch (KleidiAI kai_run_matmul_* and the repack gemm/gemv path), checked directly on the ollama binary -- Ollama vendors ggml via cgo rather than shipping the llama.cpp-style separate libggml-cpu shared library.",
+  "why_it_matters": "Ollama is the most widely-run llama.cpp-family binary; if it silently under-dispatches accelerated CPU kernels the way this project's headline KleidiAI finding does, that gap ships to far more machines than a hand-built llama.cpp ever would. This preset also demonstrates a DIFFERENT, structural failure mode this tool must fail closed on rather than silently pass: Ollama's Go build process (ggml is statically linked in via cgo) strips these C++ symbols from the binary's DYNAMIC symbol table entirely, so nm-based L1/L3 verification is currently blind on this specific distribution shape -- a real, reportable limitation of the technique, not a bug in this probe.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["ollama", "bin/ollama"],
+      "lib_globs": ["lib/ollama/**/libggml-cpu*.dylib", "libggml-cpu*.dylib"]
+    },
+    "linux": {
+      "binary_globs": ["ollama", "bin/ollama"],
+      "lib_globs": ["lib/ollama/**/libggml-cpu*.so*", "libggml-cpu*.so*"]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "binary",
+    "symbol_prefix": null,
+    "dispatch_regex": "(^kai_run_matmul|^_?ZN4ggml3cpu6repack.*(4gemm|4gemv))",
+    "family_order": ["sme2", "sme", "sve2", "sve", "i8mm", "dotprod", "neon", "gemm", "gemv"],
+    "note": "scan_target='binary', not 'lib': unlike llama.cpp/whisper.cpp, this Ollama distribution ships no separate CPU backend shared library (only optional GPU backend plugins under lib/ollama/<backend>/ -- e.g. cuda_v12/ in the artifact checked below). If a future Ollama build DOES ship a matching libggml-cpu*.{so,dylib} (the lib_globs above are ready for that layout), pass --lib-name to point this preset at it instead; scan_target here is a preset-level default, not something --lib-name can't override."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": null,
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "ggml_backend_load_string_present", "regex": "(ggml_backend_load|GGML_BACKEND_PATH)", "group": 0},
+      {"label": "load_backend", "regex": "load_backend: loaded (\\S+) backend from (\\S+)", "group": 1}
+    ],
+    "note": "No selection-log equivalent of llama.cpp's 'kleidiai: primary q4 kernel feature X' has been located in Ollama's CLI output (untested: this repo has no macOS Ollama binary or GGUF model handy to actually run `ollama run` against -- see caveats). The two patterns above are static-string / structural checks only, run against whatever --run command the caller supplies; they do not by themselves prove an execution-time claim."
+  },
+  "l3": {
+    "enabled": false,
+    "note": "Deliberately disabled rather than left to fail silently: the binary checked here has 0 candidate symbols for either KleidiAI or repack (see l1), and this preset has never been executed end-to-end (no `ollama run` invocation with a real model was attempted -- see caveats), so there is no basis to claim an L3 breakpoint probe would behave correctly against Ollama's actual CLI argv shape. A future revision that confirms a real `ollama run <model> <prompt>` invocation and either finds real candidate symbols (in the binary or a shipped CPU backend lib) should flip this to enabled:true."
+  },
+  "workload": {
+    "requires": ["model"],
+    "arg_template": ["run", "{model}", "{prompt}"],
+    "defaults": {"prompt": "Hello."},
+    "note": "UNTESTED end-to-end in this environment (documented from Ollama's public CLI usage, `ollama run MODEL PROMPT`, not from an actual run here) -- L3 is disabled for this target anyway (see l3.note), so this template currently only matters for a caller doing their own L2-only --run."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max), scanning a linux/aarch64 artifact",
+      "layers": ["l1"],
+      "artifact": "official Ollama linux-arm64 release tarball (ollama-linux-arm64.tar.zst, extracted to /tmp/llamacpp_investigation/ollama-arm64), bin/ollama (35 MB, Go PIE executable, stripped) + lib/ollama/cuda_v12/ (CUDA runtime plugin libs only, no CPU backend lib)",
+      "result": "L1 (`polygraph check ollama --binary .../bin/ollama --level 1`, run FOR REAL from this macOS host against the real Linux ELF binary, format auto-detected from its ELF magic bytes) reports 0/16 matching symbols in the main binary -- `nm -D`'s DEFINED-symbol rows (T) total exactly 16 for this stripped Go/cgo binary, all 16 being go-sqlite3's cgo trampolines (_cgo_panic, crosscall2, authorizerTrampoline, ...), zero of them ggml-internal. (`nm -D`'s full output, including undefined/imported GLIBC symbols, is ~133 lines; only defined, 3+-field rows are counted as this preset's denominator, matching scan_symbols_generic()'s own counting rule.) This is a REAL result against a REAL, currently-shipping production artifact, not a synthetic fixture -- but it is a negative/structural result (the technique cannot see into this binary shape), not a demonstration of a working positive-hit case the way llama-cpp-kleidiai's verified_against entry is."
+    }
+  ],
+  "caveats": [
+    "L2 and L3 were NOT executed against a real `ollama run` invocation in this environment (no macOS ollama binary + compatible GGUF model was set up for this preset specifically; the Linux ARM64 binary checked for L1 cannot run on this macOS host). Treat l2.patterns and workload.arg_template as documented-but-unverified until run for real.",
+    "L1's 0-symbol result is explained by Ollama's Go+cgo static-linking build process stripping internal C++ symbols from the dynamic symbol table, NOT by evidence that Ollama lacks KleidiAI/repack acceleration -- this preset cannot currently distinguish 'not compiled in' from 'compiled in but not exported'. A DWARF-aware or full-symtab (not just dynsym) scan of an unstripped Ollama build, if one can be obtained, would resolve this ambiguity; out of scope for this pass.",
+    "If Ollama ships a separate CPU backend plugin lib in some build/platform combination (mirroring lib/ollama/cuda_v12/'s pattern), pass --lib-name to scan it instead of the main binary -- the lib_globs above are written for that layout but have never matched a real file."
+  ]
+}

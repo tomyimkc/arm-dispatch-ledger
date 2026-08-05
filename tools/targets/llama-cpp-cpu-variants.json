@@ -1,0 +1,67 @@
+{
+  "name": "llama-cpp-cpu-variants",
+  "aliases": ["cpu-variants"],
+  "tested": true,
+  "description": "ggml's GGML_CPU_ALL_VARIANTS runtime multi-versioning: the repack::gemm/gemv templated matmul kernels that back llama.cpp's per-ISA-tier dispatch libraries (libggml-cpu-armv8.0_1.so ... libggml-cpu-armv9.2_2.so), independent of KleidiAI.",
+  "why_it_matters": "A GGML_CPU_ALL_VARIANTS release ships several libggml-cpu-<isa-tier>.{so,dylib} files and picks one at runtime based on detected CPU features -- if that selection silently picks a lower ISA tier than the CPU actually supports, you get correct output at a needless speed penalty, with nothing in a normal run to say so. This is a DIFFERENT dispatch question from llama-cpp-kleidiai: KleidiAI is one optional accelerator; the repack path is ggml's own baseline multi-ISA matmul dispatch, present (and REPACK=1 in system_info) even when KleidiAI is off.",
+  "platforms": {
+    "darwin": {
+      "binary_globs": ["llama-cli", "bin/llama-cli"],
+      "lib_globs": ["libggml-cpu.dylib", "libggml-cpu*.dylib"]
+    },
+    "linux": {
+      "binary_globs": ["llama-cli", "bin/llama-cli"],
+      "lib_globs": ["libggml-cpu.so", "libggml-cpu-*.so*", "libggml-cpu*.so*"]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "lib",
+    "symbol_prefix": null,
+    "dispatch_regex": "^_?ZN4ggml3cpu6repack.*(4gemm|4gemv)",
+    "family_order": ["gemm", "gemv"],
+    "note": "Itanium-mangled C++ template symbols (ggml::cpu::repack::gemm<...>/gemv<...>), one instantiation per quant block type. The leading '_?' is deliberate and platform-load-bearing: verify_dispatch.py's Darwin nm path strips ALL leading underscores (Mach-O's own linker-decoration underscore plus the one Itanium mangling already starts with), leaving 'ZN4ggml...'; the Linux nm path does not strip, leaving '_ZN4ggml...'. A regex anchored to only one form silently matches 0 symbols on the other platform -- verified by running the SAME regex against both a real Darwin dylib and a real Linux .so (see verified_against)."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": null,
+    "fallback_indicator_label": null,
+    "patterns": [
+      {"label": "system_info", "regex": "system_info:.*", "group": 0},
+      {"label": "load_backend_cpu", "regex": "load_backend: loaded CPU backend from (\\S+)", "group": 1}
+    ],
+    "note": "No per-symbol 'kleidiai: primary kernel feature X'-style selection line exists for the repack dispatcher, so this target has NO advertised_family: the system_info line is compile-time-of-the-loaded-variant ISA flags (REPACK/DOTPROD/I8MM/SVE/SVE2/...), useful context but not a per-kernel claim to check L3 against. Verdicts for this target are therefore always an *_EXECUTED_NO_ADVERTISED_FEATURE / NO_DISPATCH_OBSERVED shape (informational: 'did the repack path run at all'), never a MISMATCH/DISPATCHED shape. 'load_backend_cpu' only fires on ggml builds using GGML_BACKEND_DL (dynamic backend loading, e.g. Homebrew's whisper-cpp formula) -- most llama.cpp release/from-source builds link the CPU backend statically and never print this line; it is included for the (untested here) case a caller points this preset at a GGML_BACKEND_DL build of llama.cpp."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "lib",
+    "dispatch_regex": "^_?ZN4ggml3cpu6repack.*(4gemm|4gemv)",
+    "note": "Same fail-closed breakpoint mechanism as llama-cpp-kleidiai. See caveats: on the one artifact this could actually be executed against (a from-source build with KleidiAI compiled in), the repack path resolves 32 real candidate symbols but was observed to dispatch 0 of them for every workload tried -- KleidiAI's buffer-type negotiation appears to win for every tensor this model has, so the repack fallback path this target targets never got exercised. That is a genuine, reproducible result, not a probe failure (candidate symbols DO resolve; see verified_against) -- but it means the 'these ARE the kernels used when the ISA-tier selection falls back' half of this target's claim remains unconfirmed pending a KleidiAI-free build or a model/quant combination that forces the repack path."
+  },
+  "workload": {
+    "requires": ["model"],
+    "arg_template": ["-m", "{model}", "-p", "{prompt}", "-n", "{n_predict}", "-no-cnv", "-st", "--simple-io", "-t", "{threads}", "--verbose"],
+    "defaults": {"prompt": "Hello.", "n_predict": "4", "threads": "2"},
+    "note": "Same argv shape as llama-cpp-kleidiai -- any llama-cli build accepts it."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max), scanning a linux/aarch64 artifact",
+      "layers": ["l1"],
+      "artifact": "official llama.cpp b10276 ubuntu-arm64 release tarball, all 8 libggml-cpu-{armv8.0_1,armv8.2_1,armv8.2_2,armv8.2_3,armv8.6_1,armv8.6_2,armv9.2_1,armv9.2_2}.so files",
+      "result": "Each of the 8 variant .so files: 0 kai_ symbols; the dispatch_regex above matches exactly 32 symbols (16 gemm + 16 gemv instantiations) via `polygraph check --level 1` (which counts ALL nm-listed entries, defined+undefined, as the denominator -- 577 there; a stricter defined-function-only count via `nm -D ... | grep -c ' T '` separately gave 393) -- identical across all 8 variants (they differ in compiled ISA target, not in which symbols they export). Confirms both halves of this preset's binary_globs/lib_globs claim (GGML_CPU_ALL_VARIANTS really does ship 8 separate libs in the official Linux arm64 release) and that the regex's Linux ('_ZN...') symbol form is correct."
+    },
+    {
+      "date": "2026-08-05",
+      "platform": "darwin-arm64 (Apple M4 Max)",
+      "layers": ["l1", "l2", "l3"],
+      "artifact": "locally built /tmp/llama.cpp/build/bin/llama-cli + libggml-cpu.0.18.0.dylib (-DGGML_CPU_KLEIDIAI=ON), model /tmp/ggufs/q05.gguf",
+      "result": "L1: 32/673 symbols match (16 gemm + 16 gemv), confirming the regex's Darwin ('ZN...', both underscores stripped) symbol form is also correct. L2: system_info line captured with REPACK = 1 present. L3: 32 candidate symbols resolve real breakpoints (probe correctly instrumented, not silently uninstrumented) but total_hits = 0 across both a short decode workload (t=2, n=4) and a longer prefill+decode workload (380-word prompt, t=8, n=8) -- see l3.note above for why this is reported as an open question, not a pass."
+    }
+  ],
+  "caveats": [
+    "L3's positive-dispatch claim ('the repack kernels are what actually runs when ISA-tier selection matters') is UNCONFIRMED on the only artifact available to test end-to-end here, because that artifact also has KleidiAI compiled in and KleidiAI's buffer-type negotiation appears to claim every tensor this model has before the repack path is ever tried. A KleidiAI-free build (e.g. the official release binaries, which have 0 kai_ symbols) would be a cleaner test of this specific claim, but those are Linux ELF binaries this macOS host cannot execute.",
+    "No advertised_family exists for this target (see l2.note) -- exit code will be 2 (undetermined) even on a fully successful run; that is by design, not a bug."
+  ]
+}
