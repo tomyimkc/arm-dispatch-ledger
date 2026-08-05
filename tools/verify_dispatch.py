@@ -291,6 +291,40 @@ def _run_with_timeout(cmd, timeout, env=None):
 # Platform / hardware identification
 # --------------------------------------------------------------------------
 
+def nm_symbol_lines(nm_bin: str, path: str, is_macho: bool, timeout: int = 30) -> list[str]:
+    """Return nm output lines for `path`, covering both ELF symbol tables.
+
+    Neither ELF nm mode is sufficient alone, and picking one silently loses symbols:
+
+    * ``nm -D`` reads only ``.dynsym``. A normal (non-``-rdynamic``) executable exports
+      nothing there, so scanning a *binary* rather than a shared library finds zero symbols
+      -- which this tool then correctly, and uselessly, reports as "refusing to run an
+      uninstrumented probe".
+    * ``nm -gU`` reads ``.symtab``, which a **stripped** shared library does not have --
+      and production libraries are routinely stripped, which is exactly the case this
+      project cares about.
+
+    So run both and union them. Being wrong about which symbols exist is the one failure
+    this tool cannot afford: a missed symbol becomes "0 dispatches", which reads as a
+    finding rather than as a blind spot.
+
+    Mach-O has a single symbol table and ``-gU`` covers it; ``-D`` is not meaningful there.
+    """
+    modes = [["-gU"]] if is_macho else [["-gU"], ["-D"]]
+    seen, lines = set(), []
+    for mode in modes:
+        try:
+            out = subprocess.run([nm_bin] + mode + [path], capture_output=True,
+                                 text=True, timeout=timeout)
+        except (subprocess.SubprocessError, OSError):
+            continue
+        for ln in out.stdout.splitlines():
+            if ln and ln not in seen:
+                seen.add(ln)
+                lines.append(ln)
+    return lines
+
+
 def platform_id() -> str:
     return f"{platform.system().lower()}-{platform.machine().lower()}"
 
@@ -425,10 +459,10 @@ def run_l1_static(lib_path: Optional[str], dispatch_regex: str) -> L1Result:
             return L1Result(lib_path=lib_path, tool_chain=tool_chain, available=False,
                              error=f"missing tool(s): nm={bool(nm_bin)} otool={bool(otool_bin)}")
         try:
-            nm_out = subprocess.run([nm_bin, "-gU", lib_path], capture_output=True, text=True, timeout=30)
+            nm_lines = nm_symbol_lines(nm_bin, lib_path, is_macho=(platform.system() == "Darwin"))
         except Exception as e:
             return L1Result(lib_path=lib_path, tool_chain=tool_chain, available=False, error=f"nm failed: {e}")
-        for line in nm_out.stdout.splitlines():
+        for line in nm_lines:
             parts = line.split()
             if len(parts) < 3:
                 continue
@@ -464,10 +498,20 @@ def run_l1_static(lib_path: Optional[str], dispatch_regex: str) -> L1Result:
         return L1Result(lib_path=lib_path, tool_chain=tool_chain, available=False,
                          error=f"missing tool(s): nm={bool(nm_bin)} objdump={bool(objdump_bin)}")
     try:
-        nm_out = subprocess.run([nm_bin, "-D", lib_path], capture_output=True, text=True, timeout=30)
+        # -gU (extern-only, defined-only), NOT -D (dynamic-symbol-table-only): GNU nm's -D
+        # only lists what the dynamic linker would resolve, which is a strict subset of a
+        # shared library's real exported symbols and is EMPTY for a plain (non-`-rdynamic`)
+        # executable -- a scan_target the tool explicitly supports scanning directly (see
+        # resolve_target_artifacts()'s docstring). -gU reads the regular symbol table
+        # instead, filtered to external+defined, which finds the same symbols -D does for a
+        # real dlopen'd .so (verified byte-identical against tests/l3_gdb_groundtruth's
+        # ground-truth libkai_fake.so) while also working for a plain executable. This is
+        # the same flag string already used for Mach-O below -- GNU nm's -g/-U happen to
+        # mean the same thing as macOS nm's.
+        nm_lines = nm_symbol_lines(nm_bin, lib_path, is_macho=(platform.system() == "Darwin"))
     except Exception as e:
         return L1Result(lib_path=lib_path, tool_chain=tool_chain, available=False, error=f"nm failed: {e}")
-    for line in nm_out.stdout.splitlines():
+    for line in nm_lines:
         parts = line.split()
         if len(parts) < 3:
             continue
@@ -691,14 +735,17 @@ def enumerate_dispatch_symbols(lib_path: Optional[str], dispatch_regex: str) -> 
     if not nm_bin:
         return []
     is_darwin = platform.system() == "Darwin"
-    nm_args = [nm_bin, "-gU", lib_path] if is_darwin else [nm_bin, "-D", lib_path]
+    # -gU on both platforms (extern-only, defined-only): NOT ELF's -D (dynamic-symbol-table
+    # only), which is empty for a plain executable whose dispatch symbols were never
+    # exported for dynamic linking -- see scan_symbols_generic()'s identical fix for the
+    # full rationale and the ground-truth verification against a real dlopen'd .so.
     try:
-        out = subprocess.run(nm_args, capture_output=True, text=True, timeout=30)
+        nm_lines = nm_symbol_lines(nm_bin, lib_path, is_macho=(platform.system() == "Darwin"))
     except Exception:
         return []
     dispatch_re = re.compile(dispatch_regex)
     names = set()
-    for line in out.stdout.splitlines():
+    for line in nm_lines:
         parts = line.split()
         if len(parts) < 3:
             continue
@@ -1010,16 +1057,23 @@ def scan_symbols_generic(artifact_path: Optional[str], symbol_prefix: Optional[s
         return L1Result(lib_path=artifact_path, tool_chain=tool_chain, available=False,
                          error="missing tool: nm")
     dispatch_re = re.compile(dispatch_regex)
-    nm_args = [nm_bin, "-gU", artifact_path] if tool_chain == "macho" else [nm_bin, "-D", artifact_path]
+    # -gU (extern-only, defined-only) on both formats -- NOT ELF's -D (dynamic-symbol-table
+    # only). -D is empty for a plain executable (this function's whole "scan_target: binary"
+    # case -- see resolve_target_artifacts()'s docstring) whose symbols were never exported
+    # for dynamic linking, e.g. examples/catch-a-liar's fixture: `nm -D` finds nothing for
+    # fast_path_sum() because it's a normal non-`-rdynamic` PIE executable, while `nm -gU`
+    # finds it in the regular symbol table -- and finds the exact same symbols `-D` did for
+    # a real dlopen'd .so (verified byte-identical against tests/l3_gdb_groundtruth's
+    # ground-truth libkai_fake.so). See run_l1_static()'s identical fix for more detail.
     try:
-        nm_out = subprocess.run(nm_args, capture_output=True, text=True, timeout=30)
+        nm_lines = nm_symbol_lines(nm_bin, artifact_path, is_macho=(tool_chain == "macho"))
     except Exception as e:
         return L1Result(lib_path=artifact_path, tool_chain=tool_chain, available=False, error=f"nm failed: {e}")
 
     total_count = 0
     matched_count = 0
     families: dict = {}
-    for line in nm_out.stdout.splitlines():
+    for line in nm_lines:
         parts = line.split()
         if len(parts) < 3:
             continue

@@ -117,6 +117,21 @@ outputs:
       Empty if tools/polygraph was not available. Upload it as a workflow
       artifact yourself if you want to keep it.
     value: ${{ steps.check.outputs.json-path }}
+  l3-error:
+    description: >-
+      The literal `.l3.error` string from the tool's --json output when L3
+      did not complete (e.g. debugger missing, no matching symbols, timed
+      out). Empty when L3 completed or was never attempted. Read this
+      instead of downloading `json-path` off the runner: without it, a
+      verdict like L3_UNAVAILABLE says THAT level 3 failed but not WHY (see
+      the "Write step summary" step below, which also prints this string).
+    value: ${{ steps.check.outputs.l3-error }}
+  l2-error:
+    description: "Same as l3-error, for L2 (selection log). Empty if L2 completed or was not attempted."
+    value: ${{ steps.check.outputs.l2-error }}
+  l1-error:
+    description: "Same as l3-error, for L1 (static symbol scan). Empty if L1 completed or was not attempted."
+    value: ${{ steps.check.outputs.l1-error }}
 
 runs:
   using: "composite"
@@ -226,6 +241,9 @@ runs:
             echo "verdict=TOOL_NOT_AVAILABLE"
             echo "level-reached=0"
             echo "json-path="
+            echo "l1-error="
+            echo "l2-error="
+            echo "l3-error="
           } >>"$GITHUB_OUTPUT"
           echo "tool_exit=127" >>"$GITHUB_OUTPUT"
           exit 1
@@ -256,15 +274,26 @@ runs:
           tail -n 40 "$log_path" >&2 || true
         fi
 
-        py_out="unknown|unknown"
+        # Parse verdict/level/per-layer errors out of the --json file and write them
+        # straight to $GITHUB_OUTPUT via python3 (using GitHub's multiline-output
+        # delimiter format, since an error string can contain arbitrary text). This
+        # ALSO prints the decisive error (whichever of l3/l2/l1 actually has one) to
+        # this step's own stderr as a `::warning::` annotation -- without that, only
+        # the runner-local --json file (json-path below) ever contained it, which
+        # meant a judge reading the Action's log or Step Summary saw a bare verdict
+        # like L3_UNAVAILABLE with no way to tell WHY short of downloading a file
+        # off the runner. See the "Write step summary" step below, which also
+        # prints these strings.
         if [[ -s "$json_path" ]]; then
-          py_out="$(python3 - "$json_path" <<'PY'
+          python3 - "$json_path" >>"$GITHUB_OUTPUT" <<'PY'
         import json
         import sys
+        import uuid
 
         path = sys.argv[1]
         verdict = "unknown"
         level = "unknown"
+        errors = {}
         try:
             with open(path) as fh:
                 data = json.load(fh)
@@ -277,19 +306,40 @@ runs:
                     if key in data:
                         level = str(data[key])
                         break
-        except Exception:
-            pass
-        print(f"{verdict}|{level}")
-        PY
-          )"
-        fi
-        IFS='|' read -r verdict level_reached <<<"$py_out"
+                for layer in ("l1", "l2", "l3"):
+                    layer_data = data.get(layer)
+                    if isinstance(layer_data, dict) and layer_data.get("error"):
+                        errors[layer] = str(layer_data["error"])
+        except Exception as e:
+            errors["_parse"] = f"could not parse {path}: {e}"
 
-        {
-          echo "verdict=$verdict"
-          echo "level-reached=$level_reached"
-          echo "json-path=$json_path"
-        } >>"$GITHUB_OUTPUT"
+        def emit(name, value):
+            delim = f"polygraph_{uuid.uuid4().hex}"
+            print(f"{name}<<{delim}")
+            print(value)
+            print(delim)
+
+        emit("verdict", verdict)
+        emit("level-reached", level)
+        emit("l1-error", errors.get("l1", ""))
+        emit("l2-error", errors.get("l2", ""))
+        emit("l3-error", errors.get("l3", ""))
+
+        decisive = errors.get("l3") or errors.get("l2") or errors.get("l1") or errors.get("_parse")
+        if decisive:
+            print(f"::warning::polygraph-check: {decisive}", file=sys.stderr)
+        PY
+        else
+          {
+            echo "verdict=unknown"
+            echo "level-reached=unknown"
+            echo "l1-error="
+            echo "l2-error="
+            echo "l3-error="
+          } >>"$GITHUB_OUTPUT"
+        fi
+
+        echo "json-path=$json_path" >>"$GITHUB_OUTPUT"
         echo "tool_exit=$tool_exit" >>"$GITHUB_OUTPUT"
         exit "$tool_exit"
 
@@ -302,6 +352,9 @@ runs:
         LEVEL_REACHED: ${{ steps.check.outputs.level-reached }}
         JSON_PATH: ${{ steps.check.outputs.json-path }}
         TOOL_EXIT: ${{ steps.check.outputs.tool_exit }}
+        L1_ERROR: ${{ steps.check.outputs.l1-error }}
+        L2_ERROR: ${{ steps.check.outputs.l2-error }}
+        L3_ERROR: ${{ steps.check.outputs.l3-error }}
         TARGET: ${{ inputs.target }}
         BINARY: ${{ inputs.binary }}
         LEVEL_REQ: ${{ inputs.level }}
@@ -325,6 +378,20 @@ runs:
             echo "| tool exit code | $TOOL_EXIT |"
             echo "| fail-on | $FAIL_ON |"
             [[ -n "$JSON_PATH" ]] && echo "| raw JSON (runner-local) | \`$JSON_PATH\` |"
+            # Surface WHY, not just THAT: a bare verdict like L3_UNAVAILABLE or
+            # L3_ERROR tells a reader a layer didn't complete but not the reason.
+            # Print whichever layer's error is deepest/most specific -- L3 first,
+            # since it's the decisive layer, falling back to L2 then L1.
+            if [[ -n "$L3_ERROR" ]]; then
+              echo
+              echo "**L3 (dispatch) unavailable:** $L3_ERROR"
+            elif [[ -n "$L2_ERROR" ]]; then
+              echo
+              echo "**L2 (selection) unavailable:** $L2_ERROR"
+            elif [[ -n "$L1_ERROR" ]]; then
+              echo
+              echo "**L1 (static) unavailable:** $L1_ERROR"
+            fi
           fi
         } >>"$GITHUB_STEP_SUMMARY"
 
