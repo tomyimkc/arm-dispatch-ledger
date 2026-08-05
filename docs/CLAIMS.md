@@ -1289,3 +1289,23 @@ above assigns each symbol to exactly one family, most-specific token first.
 concurrent-load dispatch trace (`results/server/server-dispatch.json`) records **zero** SVE calls.
 The kernels exist, the silicon has SVE2, and the dispatcher still never selects them — Finding 2,
 observed end to end on Cortex-X925.
+
+### 7B broken-vs-fixed wall-clock race (`results/scale/race-7b-broken-vs-fixed.json`)
+
+| claim | value | source |
+|---|---|---|
+| broken build, wall clock (median of 5) | 16.181 s | `results/scale/race-7b-broken-vs-fixed.json` |
+| fixed build, wall clock (median of 5) | 12.108 s | `results/scale/race-7b-broken-vs-fixed.json` |
+| wall-clock ratio | 1.34x | derived |
+
+**Why this is 1.34x and not 4.57x.** End-to-end wall clock at 150 tokens includes loading a 4.4 GB
+model, which the build fix does not affect. The 4.57x lives in *prefill throughput* specifically
+(`results/scale/scale-experiment.json`). The two figures measure different things and must not be
+substituted for one another.
+
+**A discarded first attempt is worth recording.** An initial n=3 capture with no cache warmup gave
+walls of `[21.54, 23.42, 15.96]` (broken) and `[18.87, 12.21, 11.99]` (fixed) — a median ratio of
+1.76x, but a range spanning 1.24x-1.80x depending on which reps were compared. The spread was cold
+page cache on a 4.4 GB file, not architecture. Re-running with a discarded warmup per binary and
+n=5 tightened it to `[16.18, 16.86, 18.01, 16.00, 16.16]` vs `[12.16, 12.15, 12.11, 11.79, 11.96]`
+and gave the honest 1.34x. **The 1.76x figure was never published.**

@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "polygraph.video-scenes.v4",
+  "product": "Polygraph",
+  "title": "Polygraph \u2014 a tool that checks whether software is telling the truth",
+  "targetTotalSeconds": 103,
+  "clipDurationSeconds": 15,
+  "audience": "General public first, contest judges second. Opens with the presenter naming the product and saying in one line what it does, so the viewer knows what they are watching before anything technical. The side-by-side speed race is held back and used later, as the payoff when the fix is introduced.",
+  "takeaway": "He built Polygraph \u2014 a tool that checks whether software is telling the truth.",
+  "raceAfter": "04-thefix",
+  "raceSeconds": 13,
+  "scenes": [
+    {
+      "id": "01-intro",
+      "presenterSide": "LEFT",
+      "base": "left-a.png",
+      "expression": "warm, welcoming, direct to camera \u2014 introducing himself and his work to a stranger",
+      "speech": "Hi, I'm Tom, and I built Polygraph. It's a tool that checks whether software is telling the truth about your computer's hardware. I pointed it at the A.I. assistant on my own laptop, and what it found genuinely surprised me.",
+      "panel": {
+        "kicker": "Polygraph",
+        "cards": [
+          {
+            "title": "WHAT IT IS",
+            "value": "a lie detector for software",
+            "accent": "cyan"
+          },
+          {
+            "title": "THE QUESTION IT ANSWERS",
+            "value": "did that actually run?",
+            "accent": "cyan"
+          },
+          {
+            "title": "WORKS ON",
+            "value": "programs you didn't write",
+            "accent": "green"
+          }
+        ]
+      }
+    },
+    {
+      "id": "02-finding",
+      "presenterSide": "RIGHT",
+      "base": "right-a.png",
+      "expression": "matter-of-fact, a little incredulous at what he found",
+      "speech": "That assistant runs entirely offline. Nothing is sent to a company. It reported that it was using my laptop's A.I. chip, the part built to make this fast. Polygraph watched that chip and counted. It never ran. Not once.",
+      "panel": {
+        "kicker": "What Polygraph found",
+        "cards": [
+          {
+            "title": "THE APP REPORTED",
+            "value": "AI chip: in use",
+            "accent": "amber"
+          },
+          {
+            "title": "WHAT ACTUALLY RAN",
+            "value": "AI chip: 0 times",
+            "accent": "red"
+          },
+          {
+            "title": "INSTEAD",
+            "value": "31,871 slow-path calls",
+            "accent": "red"
+          }
+        ]
+      }
+    },
+    {
+      "id": "03-howitworks",
+      "presenterSide": "LEFT",
+      "base": "left-b.png",
+      "expression": "clear and confident, explaining the idea behind the tool",
+      "speech": "Here's why nobody caught this. Almost every test measures how long something took, and the time looks perfectly normal either way. Polygraph doesn't measure time. It measures what actually ran, down to the individual chip instructions.",
+      "panel": {
+        "kicker": "Why nobody caught it",
+        "cards": [
+          {
+            "title": "EVERY OTHER TEST MEASURES",
+            "value": "how long it took",
+            "accent": "amber"
+          },
+          {
+            "title": "WHICH LOOKS FINE",
+            "value": "either way",
+            "accent": "amber"
+          },
+          {
+            "title": "POLYGRAPH MEASURES",
+            "value": "what actually ran",
+            "accent": "green"
+          }
+        ]
+      }
+    },
+    {
+      "id": "04-thefix",
+      "presenterSide": "RIGHT",
+      "base": "right-b.png",
+      "expression": "decisive, setting up a demonstration \u2014 leading into the side-by-side",
+      "speech": "Two hidden rules inside the code were quietly ruling it out. So I wrote a fix that picks the right setting by itself. No settings for you to learn. Same laptop, same question \u2014 here's the difference.",
+      "panel": {
+        "kicker": "The fix",
+        "cards": [
+          {
+            "title": "TWO HIDDEN RULES",
+            "value": "quietly ruled the chip out",
+            "accent": "amber"
+          },
+          {
+            "title": "THE FIX",
+            "value": "picks the setting by itself",
+            "accent": "green"
+          },
+          {
+            "title": "WATCH",
+            "value": "same laptop, before and after",
+            "accent": "cyan"
+          }
+        ]
+      }
+    },
+    {
+      "id": "05-honesty",
+      "presenterSide": "LEFT",
+      "base": "left-a.png",
+      "expression": "candid, unflinching \u2014 reporting a result that undercuts his own earlier claim",
+      "speech": "Then I pointed Polygraph at my own headline. On a small model my fix looked four times faster. On a seven-billion model, the size people actually run, it drops to one point three. I published that too.",
+      "panel": {
+        "kicker": "I checked my own headline",
+        "cards": [
+          {
+            "title": "ON A TINY MODEL",
+            "value": "4.56x faster",
+            "accent": "amber"
+          },
+          {
+            "title": "ON A REAL 7B MODEL",
+            "value": "1.33x  \u2014  it mostly vanishes",
+            "accent": "red"
+          },
+          {
+            "title": "SO I PUBLISHED BOTH",
+            "value": "method holds, number doesn't",
+            "accent": "cyan"
+          }
+        ]
+      }
+    },
+    {
+      "id": "06-close",
+      "presenterSide": "RIGHT",
+      "base": "right-a.png",
+      "expression": "warm and confident, landing the real discovery",
+      "speech": "But the biggest win wasn't tuning at all. On that same seven-billion model, a build that had silently lost its hardware features read prompts four and a half times slower. Polygraph finds that. It's free \u2014 point it at anything.",
+      "panel": {
+        "kicker": "The real find",
+        "cards": [
+          {
+            "title": "A BUILD THAT LOST ITS FEATURES",
+            "value": "4.57x slower reading prompts",
+            "accent": "red"
+          },
+          {
+            "title": "AND IT GETS WORSE",
+            "value": "the bigger the model",
+            "accent": "amber"
+          },
+          {
+            "title": "POLYGRAPH",
+            "value": "free  \u00b7  finds it in one command",
+            "accent": "green"
+          }
+        ]
+      }
+    }
+  ]
+}
