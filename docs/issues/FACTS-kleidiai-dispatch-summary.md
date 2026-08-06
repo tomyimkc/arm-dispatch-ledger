@@ -1,5 +1,10 @@
 # FACT SHEET — KleidiAI dispatch-summary series (for a HUMAN to write posts from)
 
+> **Which file to use.** The working pair for writing the issue is the local
+> `ISSUE-DATA-PACK-…md` (what to say) + `ISSUE-WRITING-GUIDE-…md` (how to say it).
+> This sheet is their committed, public twin — it is what an outside reader can verify.
+> Keep the three consistent: any correction here must land in the data pack too.
+
 **Rule that governs this file's use:** llama.cpp CONTRIBUTING.md — "It is strictly prohibited
 to use AI to write your posts for you (bug reports, feature requests, pull request
 descriptions, Github discussions, responding to humans, ...)". This file is verified raw
