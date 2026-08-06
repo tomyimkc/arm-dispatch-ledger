@@ -1,0 +1,73 @@
+# Linux/aarch64 validation of the dispatch-summary series — DGX Spark (Cortex-X925, gcc 13.3)
+# Date: 2026-08-06. Tree: llama.cpp PR #26076 head 7d8324875 + the 2-commit dispatch-summary
+# series (docs/issues/kleidiai-dispatch-summary-series.patch in this repo).
+# Model: q05.gguf, sha256 c8cd5f37dd1235fb010c45316d4ff8af875e1a4e0ff368b4bf6cacb9053d4919
+# (352,972,352 bytes — the faithful historical baseline; see GROUND-TRUTH-DISPATCH.md
+# Addendum III and results/provenance/).
+# Workload for llama-cli runs: -p "Hello." -n 4 -no-cnv -st --simple-io (decode_short).
+
+## Arm 1 — the DOCUMENTED build line (defective on this toolchain: Finding-3 class)
+# cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CPU_KLEIDIAI=ON
+# Runtime feature detection (PR #26076) correctly reports dotprod+i8mm ("mask 3"),
+# but the compile-time gates produced an empty kernel table.
+
+kleidiai: no compatible q4 kernels found for CPU features mask 3
+kleidiai: no compatible q8 kernels found for CPU features mask 3
+kleidiai: no compatible f32 kernels found for CPU features mask 3
+kleidiai: SME disabled
+kleidiai: no runtime kernel slot available for supported op node_0
+FAIL: the KleidiAI buffer type accepted the weight but executed zero micro-kernels
+mul_mat [256 x 256] * [256 x 1]: 0 KleidiAI kernel invocations - FAIL
+mul_mat [256 x 256] * [256 x 8]: 0 KleidiAI kernel invocations - FAIL
+test_exit=1
+
+== GGML_KLEIDIAI_SUMMARY=1 llama-cli -t 1 --verbose ==
+kleidiai: dispatch summary: selected q4=none q8=none f32=none
+kleidiai: dispatch summary: executed total=0
+== GGML_KLEIDIAI_SUMMARY=1 llama-cli -t 4 --verbose ==
+kleidiai: dispatch summary: selected q4=none q8=none f32=none
+kleidiai: dispatch summary: executed total=0
+
+# Reading: the fail-closed contract worked on a real defective build — the test exits 1 and
+# the summary reads selected=none / executed total=0, while the system-info banner still
+# says KLEIDIAI = 1. Also observed: the KleidiAI buffer type ACCEPTED and packed the Q4_0
+# weight despite the empty kernel table, then fell back silently at compute time (only the
+# PR-head WARN "no runtime kernel slot available for supported op" and the zero counter
+# distinguish this run from an accelerated one).
+
+## Arm 2 — the corrected build (documented Finding-3 fix flags)
+# cmake -B build-fixed -DCMAKE_BUILD_TYPE=Release -DGGML_CPU_KLEIDIAI=ON \
+#       -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod
+
+=== TEST fixed-arch build ===
+kleidiai: primary q4 kernel feature I8MM
+kleidiai: primary q8 kernel feature I8MM
+kleidiai: no compatible f32 kernels found for CPU features mask 3
+kleidiai: SME disabled
+mul_mat [256 x 256] * [256 x 1]: 8 KleidiAI kernel invocations - OK
+mul_mat [256 x 256] * [256 x 8]: 8 KleidiAI kernel invocations - OK
+OK
+test_exit=0
+
+=== SUMMARY t=1 fixed ===
+kleidiai: dispatch summary: selected q4=I8MM q8=I8MM f32=none
+kleidiai: dispatch summary: executed qx_gemm/I8MM=486
+kleidiai: dispatch summary: executed qx_gemv/I8MM=510
+kleidiai: dispatch summary: executed total=996
+=== SUMMARY t=4 fixed ===
+kleidiai: dispatch summary: selected q4=I8MM q8=I8MM f32=none
+kleidiai: dispatch summary: executed qx_gemm/I8MM=7776
+kleidiai: dispatch summary: executed qx_gemv/I8MM=8160
+kleidiai: dispatch summary: executed total=15936
+
+# Cross-check: the t=4 total (15,936) equals, exactly, the committed gdb-based L3 count
+# from 2026-08-05 on this same machine/model/workload — "15,936 hits on every one of the
+# five probed runs" (docs/PRIOR-ART-AND-ALTERNATIVES.md, "What L3 costs"), measured on a
+# different llama.cpp commit (dbadb68) with a different tool (gdb breakpoint counting).
+# Together with the M4 Max lldb cross-validation (dispatch-summary-crossvalidation.txt,
+# 5952 = 5952 at t=2), three independent counting mechanisms agree to the hit across two
+# platforms, two debuggers, and two llama.cpp commits.
+# f32=none is expected on this CPU: the f32 KleidiAI kernels are SME-family and this
+# machine has no SME.
+# CUDA arm (the Finding-4 -ngl 0 configuration): NOT run — a GPU compute process
+# auto-starts at boot on this box and the run gate refuses to contend for the device.
