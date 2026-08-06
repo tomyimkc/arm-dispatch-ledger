@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# unit-tests.yml — the toolchain's own unit-test lane.
+#
+# The dispatch-verification lanes (verify-free-arm64.yml and siblings) prove
+# the FINDINGS; this lane proves the TOOLS. It runs the stdlib-only unittest
+# suite under tests/test_*.py, which pins the claims gate's own logic
+# (retraction guard, claim extraction, compute blocks, end-to-end gate runs on
+# fixture trees), the verdict derivation and exit-code contract of
+# tools/verify_dispatch.py, the tools/targets/*.json schema invariants, the
+# tools/polygraph CLI surface, and the MCP server handshake + selftest.
+#
+# SECURITY: safe to run on `pull_request` (including from forks): both runners
+# are GitHub-HOSTED and ephemeral, the job needs no secrets beyond the default
+# read-only GITHUB_TOKEN, and the tests touch nothing outside the checkout
+# (fixtures are built under the platform temp dir).
+
+name: unit-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        # One Linux lane (gdb, the L3 debugger the free-arm64 evidence lane
+        # uses) and one Apple Silicon lane (lldb, the host the SME2 findings
+        # were measured on). Both are free for public repos.
+        os: [ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install gdb (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gdb
+
+      - name: Run the unit suite
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v

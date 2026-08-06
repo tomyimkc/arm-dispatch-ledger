@@ -437,8 +437,12 @@ def check_retraction_guard(
 # Check 2/3 -- live claim registry + cross-file agreement
 # --------------------------------------------------------------------------------------
 
-# Ratio multiplier: "3.43x", "0.88×"
-RATIO_RE = re.compile(r"(?<![\d.,])(\d+(?:,\d{3})*\.\d+)\s*[x×]\b")
+# Ratio multiplier: "3.43x", "0.88×". Trailing `\b` would silently drop the unicode
+# "×" form (a non-word character has no word-boundary after it), which would leave
+# every "N.NN×" figure in scanned prose unextracted and therefore unpoliced -- the
+# exact drift class this gate exists to catch. `(?!\w)` is equivalent for ascii "x"
+# and correct for "×".
+RATIO_RE = re.compile(r"(?<![\d.,])(\d+(?:,\d{3})*\.\d+)\s*[x×](?!\w)")
 
 # Throughput figures: "321.0 tok/s", "93.6 -> 321.0 tok/s", "1514.1 +/- 198.9 tok/s"
 TOKS_RE = re.compile(

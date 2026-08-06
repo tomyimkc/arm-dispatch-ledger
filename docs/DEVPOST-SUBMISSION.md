@@ -49,7 +49,7 @@ against their own binary.
 
 | Criterion | Points | What to look for |
 |---|---:|---|
-| Technological Implementation | 40 | The L1/L2/L3 method, the fail-closed exit-code contract, the ground-truth harnesses, the claims-registry CI gate, cross-platform gdb/lldb, the target system, the two upstream patches |
+| Technological Implementation | 40 | The L1/L2/L3 method, the fail-closed exit-code contract, the ground-truth harnesses, a unit-test lane for the toolchain itself, the claims-registry CI gate, cross-platform gdb/lldb, the target system, the two upstream patches |
 | "WOW" factor | 25 | The build-defect finding (banner lies, 0 working kernels, 4.57x cost) and the second wow: we re-ran our own method on our own headline number and published that it shrank |
 | Potential Impact | 20 | Two reports filed upstream (#26547, #26630), an independently-reported defect reproduced and measured, a one-line CI gate any project can adopt, and an honest statement of exactly who this affects (and who it doesn't) |
 | User Experience / Developer Experience | 15 | One command, stdlib-only, JSON output, graceful degradation, a documented exit-code contract that never silently reports success |
@@ -98,6 +98,18 @@ probe once silently reported zero hits on the free CI lane — exactly the failu
 project exists to catch, this time inside our own tooling instead of `llama.cpp`'s. We do not ask
 a judge to trust that our dispatch counts are real; we ship the test that would fail if they
 weren't.
+
+The same discipline now covers the whole toolchain, not just the probe:
+`tests/test_check_claims.py`, `tests/test_verify_dispatch_units.py`,
+`tests/test_polygraph_cli.py`, and `tests/test_mcp_server.py` pin the claims gate's own logic
+(retraction guard, claim extraction, arithmetic compute blocks, end-to-end gate runs on fixture
+trees), the verdict derivation, the exit-code contract, the target-schema invariants, and the MCP
+handshake — run on every push and PR by `.github/workflows/unit-tests.yml` on free hosted Arm64
+and Apple Silicon runners. Writing these tests caught two latent bugs in our own tooling in their
+first run: the claims gate's ratio extractor was silently skipping the unicode `×` form — so every
+`N.NN×` figure in this repo's own prose was going unpoliced — and an artifact-lookup helper was
+not honoring its documented preference for unversioned library names. Both fixed in the same
+commit (`CHANGELOG.md`). A verification tool should be the most verified thing in the room.
 
 ### A claims registry that fails CI on drift, not just on invention
 

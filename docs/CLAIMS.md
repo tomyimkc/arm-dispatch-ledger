@@ -237,6 +237,7 @@ own merits.
     "71.6",
     "45.5",
     "4.4x",
+    "4.4×",
     "198.9",
     "2257.5",
     "1145.0",
@@ -285,6 +286,12 @@ own merits.
     "results/**/*.json"
   ],
   "claims": [
+    {
+      "id": "video-scene02-pan-zoom",
+      "value_text": "1.21",
+      "source_file": "docs/VIDEO-PRODUCTION.md",
+      "note": "layout measurement, not model performance: the pan/zoom correction factor the clip generator needed for scene 02 (Keeping the panel off the speaker's face)"
+    },
     {
       "id": "remeasure-decode-default",
       "value_text": "93.6",

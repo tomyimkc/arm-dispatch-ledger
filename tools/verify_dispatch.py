@@ -979,8 +979,12 @@ def find_artifact_by_globs(search_dir: str, patterns: list) -> Optional[str]:
     Supports recursive '**' patterns, since not every target's build layout puts
     its shared lib next to the binary (e.g. onnxruntime's installed package dir).
     """
+    def _unversioned_first(m):
+        return (1 if re.search(r"\.\d", os.path.basename(m)) else 0, m)
+
     for pattern in patterns or []:
-        matches = sorted(glob.glob(os.path.join(search_dir, pattern), recursive=True))
+        matches = sorted(glob.glob(os.path.join(search_dir, pattern), recursive=True),
+                         key=_unversioned_first)
         if not matches:
             continue
         for m in matches:
