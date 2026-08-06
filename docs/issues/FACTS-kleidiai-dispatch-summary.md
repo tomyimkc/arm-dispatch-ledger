@@ -42,6 +42,17 @@ adversarial review rounds; the two errors those rounds caught are already correc
   - #25701 — merged warn-once for unsupported quant types; its review established the wording
     distinction: a KleidiAI decline "does not necessarily imply a generic CPU fallback".
 - There is NO KleidiAI-specific coverage in `tests/` today (verified: zero matches).
+- **No single CI job builds CUDA and KleidiAI together** — so the Finding-4 configuration is
+  not CI-testable upstream, which is why the proposed test is the CPU-only
+  selected-implies-executed proxy. Verified job-by-job on the PR-head tree 2026-08-06:
+  KleidiAI is enabled by exactly two jobs, `cpu-arm64-graviton4-kleidiai`
+  (`.github/workflows/build-self-hosted.yml`) and `server-kleidiai`
+  (`.github/workflows/server-self-hosted.yml`), both on the Arm runner
+  `ah-ubuntu_22_04-c8g_8x`, neither setting `GGML_CUDA=ON`. CUDA is enabled by four jobs
+  (`build-cuda-ubuntu.yml`/`cuda` on ubuntu-24.04, `build-cuda-windows.yml`/`cuda` and
+  `release.yml`/`windows-cuda` on windows-2022, `server-self-hosted.yml`/`server-cuda` on a
+  self-hosted Linux+NVIDIA runner), none setting a KleidiAI flag. (Note: three workflow
+  FILES mention both strings; the separation is at job level, so cite jobs, not files.)
 - The synthetic-model test path cannot cover this: `llama_model_init_from_user` hard-sets
   `use_extra_bufts = false` (`src/llama.cpp:441`).
 
@@ -104,10 +115,10 @@ also as /tmp/kleidiai-dispatch-summary-series.patch, 349 lines):
   - test: `0 KleidiAI kernel invocations - FAIL` on both batch shapes, exit 1 with
     "the KleidiAI buffer type accepted the weight but executed zero micro-kernels".
   Model was the faithful baseline (sha256 `c8cd5f37…`, 352,972,352 bytes).
-  ADDITIONAL FINDING exposed by the test, worth one sentence in the issue: on the PR head,
-  the KleidiAI buffer type ACCEPTS and packs a Q4_0 weight even when the kernel table is
-  empty, then falls back silently at compute time (only a WARN, `no runtime kernel slot
-  available for supported op`, plus our zero counter distinguish it).
+  ADDITIONAL FINDING exposed by the test (fragments — compose your own sentence if you use
+  it): on the PR head; buffer type ACCEPTS + packs a Q4_0 weight; kernel table empty;
+  fallback at compute time; only signals = a WARN (`no runtime kernel slot available for
+  supported op`) and the zero counter.
   HONEST FRAMING RULE: this run validates the fail-closed behavior, NOT "the test passes on
   Linux" — the pass case needs a corrected-arch build (see next bullet).
 - Linux/aarch64 pass case, dated 2026-08-06 (corrected build, the documented Finding-3 fix
