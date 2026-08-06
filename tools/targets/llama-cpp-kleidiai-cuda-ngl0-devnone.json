@@ -1,0 +1,133 @@
+{
+  "name": "llama-cpp-kleidiai-cuda-ngl0-devnone",
+  "aliases": [
+    "kleidiai-cuda-ngl0-devnone"
+  ],
+  "tested": true,
+  "description": "Reproduction rig for ggml-org/llama.cpp#26334: llama-cli built with -DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON, run with -ngl 0 (CPU-only inference) and WITH -dev none (the maintainer-documented workaround). Not an upstream-shipped preset -- a one-off variant of tools/targets/llama-cpp-kleidiai.json with -ngl 0 appended to the workload, created only to drive this reproduction. Committed 2026-08-06 with the verified_against receipt for the 2026-08-05 measurement session -- the same run whose captured output still shows the 'marked untested' warning, reflecting this preset's receipt-less state at run time (see caveats and results/upstream/NOTE-TARGET-VALIDATION-WARNING.md).",
+  "why_it_matters": "Per make_cpu_buft_list() in src/llama-model.cpp, when a CUDA device is present in the model's devices list (independent of -ngl, which only zeroes compute-offloaded layers) and --no-host/-dev none are NOT passed, a GPU host (pinned-memory) buffer type is inserted into the CPU buffer-type priority list ahead of KleidiAI's extra-buft entry. select_weight_buft() then picks the first accepting buft in list order, so tensors are given the CUDA host buft before KleidiAI's extra buft is ever tried -- silently bypassing KleidiAI even though -ngl 0 was passed and the KLEIDIAI=1 banner still prints. This is the exact mechanism ggml-org/llama.cpp#26334's reporter (izard) described and gaugarg-nv (NVIDIA CUDA-backend maintainer) confirmed with a doc/policy-level reply; the issue was closed via a documented workaround, not a code fix, and nobody in the thread produced a measured before/after.",
+  "platforms": {
+    "linux": {
+      "binary_globs": [
+        "llama-cli",
+        "bin/llama-cli"
+      ],
+      "lib_globs": [
+        "libggml-cpu.so",
+        "libggml-cpu*.so*"
+      ]
+    }
+  },
+  "l1": {
+    "enabled": true,
+    "scan_target": "lib",
+    "symbol_prefix": "kai_",
+    "dispatch_regex": "^kai_run_matmul",
+    "family_order": [
+      "sme2",
+      "sme",
+      "sve2",
+      "sve",
+      "i8mm",
+      "dotprod",
+      "neon"
+    ],
+    "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json -- same regex, same family order."
+  },
+  "l2": {
+    "enabled": true,
+    "advertised_family_label": "advertised_family",
+    "fallback_indicator_label": null,
+    "patterns": [
+      {
+        "label": "advertised_family",
+        "regex": "kleidiai: primary q4 kernel feature (\\S+)",
+        "group": 1
+      },
+      {
+        "label": "primary_kernel_feature_q8",
+        "regex": "kleidiai: primary q8 kernel feature (\\S+)",
+        "group": 1
+      },
+      {
+        "label": "sme_enabled",
+        "regex": "kleidiai: SME2? enabled \\(([^)]*)\\)",
+        "group": 1
+      },
+      {
+        "label": "sme_disabled",
+        "regex": "kleidiai: SME disabled",
+        "group": 0
+      },
+      {
+        "label": "buffer_type_fallback",
+        "regex": "cannot be used with preferred buffer type (\\S+)",
+        "group": 1
+      },
+      {
+        "label": "no_kernel_warning",
+        "regex": "kleidiai: no kernel for tensor type (\\S+), not accelerated",
+        "group": 1
+      },
+      {
+        "label": "system_info",
+        "regex": "system_info:.*",
+        "group": 0
+      }
+    ],
+    "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json. 'buffer_type_fallback' is the one existing pattern most relevant to #26334: with --verbose (see workload) llama.cpp's verbosity threshold is raised to INT_MAX, which includes LLAMA_LOG_DEBUG -- so the 'cannot be used with preferred buffer type X, using Y instead' line the #26334 thread said only appears at debug verbosity should actually be visible here."
+  },
+  "l3": {
+    "enabled": true,
+    "scan_target": "lib",
+    "dispatch_regex": "^kai_run_matmul",
+    "note": "Unchanged from tools/targets/llama-cpp-kleidiai.json."
+  },
+  "workload": {
+    "requires": [
+      "model"
+    ],
+    "arg_template": [
+      "-m",
+      "{model}",
+      "-p",
+      "{prompt}",
+      "-n",
+      "{n_predict}",
+      "-no-cnv",
+      "-st",
+      "--simple-io",
+      "-t",
+      "{threads}",
+      "--verbose",
+      "-ngl",
+      "0",
+      "-dev",
+      "none"
+    ],
+    "defaults": {
+      "prompt": "Hello.",
+      "n_predict": "4",
+      "threads": "2"
+    },
+    "note": "Identical to the baseline variant's arg_template with '-dev none' appended -- the second of gaugarg-nv's two documented workarounds. -dev none makes parse_device_list() push a single null device, so the model's devices list is empty and no CUDA host buft is ever added ahead of KleidiAI's extra-buft entry."
+  },
+  "verified_against": [
+    {
+      "date": "2026-08-05",
+      "platform": "linux-aarch64 (NVIDIA DGX Spark, GB10, Cortex-X925, gcc 13.3.0, Ubuntu 24.04)",
+      "layers": [
+        "l1",
+        "l2",
+        "l3"
+      ],
+      "artifact": "llama.cpp @ dbadb68ee built with -DGGML_CPU_KLEIDIAI=ON -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv9.2-a+sve2+i8mm+bf16+dotprod (build-cuda-kleidiai/bin/llama-cli), model Qwen2.5-0.5B-Instruct-Q4_0",
+      "result": "7,968 dispatch hits in every one of the 5 interleaved reps (3,888 I8MM, rest dotprod); verdict I8MM_HYBRID_DISPATCH, exit code 0 (MATCH), level_reached 3/3. Full raw capture: results/upstream/llamacpp-26334-cuda-host-buffer.json (15 runs: 3 arms x 5 round-robin-interleaved reps); write-up: results/upstream/FINDING-4-CUDA-HOST-BUFFER.md."
+    }
+  ],
+  "caveats": [
+    "One-off variant presets for the ggml-org/llama.cpp#26334 reproduction. Their l1/l2/l3 sections are byte-identical to llama-cpp-kleidiai.json; only workload.arg_template differs (-ngl 0 appended, plus --no-host or -dev none for the two fix arms). They were created at run time on 2026-08-05 (then session-local) and committed 2026-08-06 so the Reproduce section of FINDING-4-CUDA-HOST-BUFFER.md works verbatim.",
+    "Require a CUDA-capable llama.cpp build (GGML_CUDA=ON) on a machine with an Arm CPU next to an NVIDIA GPU (DGX Spark / Grace / Jetson class). On other machines the build itself will not exist, and --binary resolution will say so rather than guess.",
+    "The 'WARNING: target ... is marked untested' line visible inside the captured human_report_literal of the evidence JSON is the CLI's own preset-provenance flag as it stood at RUN time (these presets had no verified_against receipt yet). It is not a caveat about the measurement: L3 ran to level 3/3 with real non-halting gdb breakpoints, 5 interleaved reps per arm, zero rep-to-rep variation. See results/upstream/NOTE-TARGET-VALIDATION-WARNING.md."
+  ]
+}

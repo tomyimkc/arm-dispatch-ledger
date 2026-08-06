@@ -71,9 +71,13 @@ separately, rather than collapsing them into one verdict:
 | **L2 — selection** | What does the runtime's own verbose log say it *chose*? | Parses `llama.cpp`'s own `kleidiai: primary q4 kernel feature X` / `SME2 enabled (...)` lines | The kernel was *selected* at load time. Still not proof of execution. |
 | **L3 — dispatch** | Did the kernel's machine code actually *run*? | `lldb`/`gdb`, a regex breakpoint on every real kernel entry point, a real inference workload, real hit counts | The only layer that answers the actual question. |
 
-Every dispatch verdict in this project is backed by L3, not L1 or L2 alone — L1 and L2 alone would
-have reported this project's own headline finding (Finding 3, below) as fully accelerated, and
-would have been wrong.
+Every dispatch verdict in this project is backed by L3, not L1 or L2 alone — and the two sharpest
+findings split exactly along that line. Finding 3 (below) is a missing-symbols defect: L1's static
+check is what catches it — counting compiled-in kernel symbols is how this project caught it —
+while the banner and the selection log both say everything is fine. The CUDA+KleidiAI defect
+(measured in "Potential Impact," below) goes one step further: there L1 and L2 both report the
+accelerated path as fully intact — banner, selection log, and symbol count byte-identical between
+the broken and working runs — and only L3, counting real execution, separates them.
 
 ### Fail-closed by design, at both the tool level and the CLI level
 
@@ -121,7 +125,12 @@ single inference call to a live serving process.
 
 `tools/polygraph` ships built-in, one-word presets (`polygraph check llama-cpp-kleidiai`, for
 example) that encode the exact symbol regex and workload this project already validated — but the
-underlying mechanism is not `llama.cpp`-specific. `polygraph check --binary PATH --symbols REGEX
+underlying mechanism is not `llama.cpp`-specific. And this is not hypothetical: two
+non-`llama.cpp` presets are already committed and validated end-to-end — `whisper.cpp` (a
+KleidiAI-less build correctly ends in an explicit "could not determine," never a false pass) and
+ONNX Runtime (a real CoreML→CPU silent fallback caught on a purpose-built probe graph, with the
+control graph passing) — each with a dated `verified_against` receipt in `tools/targets/*.json`.
+Beyond the presets, `polygraph check --binary PATH --symbols REGEX
 --run "CMD"` runs the identical L1/L2/L3 method against *any* binary and *any* claimed accelerated
 symbol, with no preset required. This is what "generalizes beyond `llama.cpp`" means concretely:
 the presets are a convenience layer over a mechanism that only needs a binary, a symbol pattern,
@@ -187,8 +196,10 @@ Most submissions stop at the flattering number. We didn't. This project's own or
 thread-count tuning is a **3.43x** decode win — was measured on a tiny 0.5B model on Apple Silicon.
 We re-ran the identical method on a second machine (DGX Spark) across two model sizes and published
 what we found: the same class of thread-tuning win shrinks from **4.56x at 0.5B to 1.33x at 7B**.
-We did not quietly narrow the claim in a footnote — `README.md`'s own "Correction" section leads
-with the shrinkage, and `docs/PRODUCT.md` documents rejecting an entire product framing (an
+We did not quietly narrow the claim in a footnote — `README.md` gives the shrinkage its own headed
+section ("Does the 3.43x decode-tuning win generalize to a bigger model? No — it collapses to
+1.33x at 7B"), right next to the dedicated Correction section covering this project's publicly
+retracted number, and `docs/PRODUCT.md` documents rejecting an entire product framing (an
 "auto-tuner for local LLM runners") because this exact re-measurement showed the headline number
 does not survive contact with a realistic model size. Publishing your own tool's finding against
 your own prior claim, and letting it cost you a product direction, is not a normal thing for a
@@ -254,7 +265,8 @@ ever touch KleidiAI.
 Because `tools/polygraph`'s ad-hoc mode (`--binary --symbols --run`, no preset required) needs
 nothing project-specific, the verification method — not just this one finding — is available to
 any maintainer who has ever wondered whether their own "accelerated" build flag actually does
-anything.
+anything. Two such non-`llama.cpp` presets (`whisper.cpp`, ONNX Runtime) are already committed
+with end-to-end validation receipts — see the target-system section above.
 
 ### Being honest about how many people this actually affects
 
@@ -301,7 +313,7 @@ git clone https://github.com/tomyimkc/polygraph && cd polygraph
 make demo
 ```
 
-`examples/catch-a-liar/liar.c` is thirty lines of C compiled two ways. Both builds print
+`examples/catch-a-liar/liar.c` is 45 lines of C compiled two ways. Both builds print
 `using fast path: yes` and return the same answer; one is lying. `polygraph check catch-a-liar`
 exits `1` on the liar and `0` on the honest build. A judge can verify the core claim of this
 entire project before deciding whether to read any of the rest of it. A recording of that run is
@@ -397,7 +409,7 @@ The corresponding `verify-spark-aarch64.yml` workflow is `workflow_dispatch`-onl
 `continue-on-error` on every step — there is a live, unresolved incident on this project's own
 Spark runner unrelated to this repo's code, so this lane is documented as best-effort.
 
-## What changed after 2026-06-04
+## What changed after 2026-06-04 (the challenge's new-work start date)
 
 This entire repository is new work created for this challenge: `tomyimkc/polygraph` (created and
 submitted under the name `arm-dispatch-ledger`, renamed 2026-08-04 — same account, same commit
@@ -503,7 +515,12 @@ Captions are burned in, with a sidecar `.srt` (36 cues) also provided for the Yo
 
 ### FIELD: Upstream issue URL
 
-https://github.com/ggml-org/llama.cpp/issues/26547
+https://github.com/ggml-org/llama.cpp/issues/26630
+
+This field points at the zero-kernel KleidiAI build defect because that is the bug the "What it
+does" narrative above describes. The SME2/SVE dispatch-gate findings are filed separately as
+https://github.com/ggml-org/llama.cpp/issues/26547 — both issues are linked and described in the
+"Potential Impact" section. (Guidance for pasting, not part of the field value.)
 
 ---
 
@@ -579,9 +596,12 @@ failure — the fix for both had to be found by hand, not by following the docs 
 
 Both upstream reports are now filed ([#26547](https://github.com/ggml-org/llama.cpp/issues/26547),
 [#26630](https://github.com/ggml-org/llama.cpp/issues/26630)) and the next step there is simply to
-answer whatever the maintainers ask. Extend the CLI's
-ad-hoc mode to a couple of other Arm-accelerated projects beyond `llama.cpp`, to prove the target
-system really does generalize rather than just claiming it does. Get the automated SVE2
+answer whatever the maintainers ask. Generalization is already underway, not just planned: two
+presets beyond `llama.cpp` (`whisper.cpp` and ONNX Runtime) are validated end-to-end with
+committed `verified_against` receipts (`tools/targets/*.json`) — one catching a real CoreML→CPU
+silent fallback, one demonstrating the explicit could-not-determine path — and the next step is
+more of the same, prioritizing Arm-accelerated stacks where the advertised-vs-executed gap is most
+likely. Get the automated SVE2
 confirmation lane green once the unrelated Spark runner incident is resolved, so that result stops
 depending on a manual measurement. And explore per-model auto-tuning that's honest about the thing
 this project already found the hard way: the current thread-cap heuristic is a good default, not a

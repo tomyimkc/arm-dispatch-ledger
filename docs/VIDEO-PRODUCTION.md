@@ -180,3 +180,51 @@ only fills gaps.
 
 The presenter is the project author. The likeness is generated from his own reference portrait,
 with his consent, for his own submission.
+
+---
+
+## Re-cut plan (2026-08-06) — align the video with the current submission
+
+**Why this section exists.** The rendered 1:43 video above was cut around the 2026-08-04 story
+(Finding 1 + the tuning win + patch 0001's honest negative). The submission copy
+(`docs/DEVPOST-SUBMISSION.md`) now leads with later work: Finding 3 (the zero-kernel KleidiAI
+build, 4.57x cost at 7B prefill), Finding 4 (CUDA+KleidiAI, 0 vs 7,968 kernels with every other
+signal byte-identical), and the `tools/polygraph` CLI (`make demo` / catch-a-liar). The video
+shows none of those. A judge watches one project and reads another — this plan is the fix.
+
+**Pipeline state (verified 2026-08-06).** The `/private/tmp` working tree is gone, but the full
+pipeline was preserved at `~/Documents/GitHub/polygraph-video-assets/`: `gen/` (incl.
+`generate.py`, `presenter-reference.png`, all six downloaded presenter clips in `gen/output/`)
+and `remotion/` (composition, `node_modules/`). `generate.py` accepts `--scenes <file>` and
+skips any scene whose `gen/output/<id>-raw.mp4` already exists — so a re-cut reuses existing
+clips for unchanged beats and only generates new clips for beats with new scene ids.
+
+**Companion file:** `gen/scenes-recut-2026-08-06.json` — drop-in scenes file for the re-cut.
+Validate with a dry render before the final take; if the race keys (`raceAfter`/`raceSeconds`,
+set to null/0 here) trip the renderer, delete or restore them — the plan does not use the race.
+
+### New beat structure (target ≤ 1:43; 6 × 15 s beats, no race)
+
+| # | id | Clip | Voice-over (plain English) | Panel cards | Evidence source (all numbers already claims-gate backed) |
+|---|---|---|---|---|---|
+| 01 — intro | `01-intro` | **reuse existing clip** | unchanged — "I built Polygraph… checks whether software is telling the truth… pointed it at the AI assistant on my own laptop…" | unchanged | — |
+| 02 — the finding | `02-finding3` | **regenerate** | "The most popular way to build this software prints a startup message saying the fast mode is on. I counted the fast functions actually compiled into that build: zero. It still runs, the log still looks fine — and on a model people actually run it reads its input up to four and a half times slower. The bigger the model, the worse it gets." | banner `KLEIDIAI = 1` vs `kernels compiled in: 0`; `48.64 → 222.14 tok/s (4.57x)`; "worse at 7B than at 0.5B" | `results/server/spark-provenance.txt`, `results/scale/scale-experiment.json` |
+| 03 — how it works | `03-howitworks` | **reuse existing clip** | unchanged — "benchmarks measure how long; this measures what actually ran" | update cards to the three layers: symbols (L1) / selection log (L2) / execution count via debugger (L3) | `tools/verify_dispatch.py` |
+| 04 — catch a liar, live | `04-cli` | **regenerate** | "So I packaged the check as a small free tool anyone can run. Two programs, both print 'using fast path: yes', both give the right answer — one is lying. The tool attaches a debugger and counts. The liar: zero calls — it fails the check. The honest one: it ran — it passes. I pointed the same check at a second bug where every signal matched perfectly and still nothing ran — only the counting caught it." | `exit 1` liar vs `exit 0` honest; second card: `0 vs 7,968 kernel runs — banner, log, symbols all identical` | verified live on an Apple M4 Max 2026-08-06 (`make demo`); `results/upstream/FINDING-4-CUDA-HOST-BUFFER.md` |
+| 05 — honesty | `05-honesty2` | **regenerate** | "This project got one big number wrong early on, and I published the retraction. Then I re-ran my own best result on a realistic model size and it shrank by about two thirds. Both corrections live in the repo next to the numbers they replaced. A lie detector should be pointed at its own claims first." | `4.56x → 1.33x` shrinkage; "one public retraction" | `results/REMEASURE-2026-08-04-QUIET.md`, `results/scale/scale-experiment.json` |
+| 06 — close | `06-close2` | **regenerate** | "Both bugs are filed with the people who maintain that software — reports 26630 and 26547 — with the evidence attached. And Polygraph is free. Point it at anything that claims to use your hardware, and it will tell you whether that's actually true." | `filed upstream: llama.cpp #26630 + #26547`; "free and open source" | both issues open as of 2026-08-06 |
+
+### Rules for the re-cut (same discipline as the original)
+
+- Every number shown must already pass `python3 tools/check_claims.py` (all numbers above do).
+- The voice-over keeps the jargon ban (no `kai_run_matmul`, KleidiAI, SME2, tok/s on the
+  soundtrack); panels may show the precise figures.
+- Regenerated clips go through the same layout-clearance measurement as before
+  ("Keeping the panel off the speaker's face") — do not eyeball it.
+- Captions: burned-in plus sidecar `.srt`, authored not transcribed (same ASR caveat).
+- Update this file's beat table mapping in the same commit as the new render, so the video
+  cannot silently drift from the repo.
+- Fallback (decide by 2026-08-10): if new clip generation has not converged, ship the existing
+  rendered video rather than miss the upload buffer — it is compliant, just stale.
+- Close must name BOTH upstream issues (the old cut shows only #26547, which does not match the
+  narrated headline finding — see README lede correction of 2026-08-06).

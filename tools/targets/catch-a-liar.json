@@ -2,7 +2,7 @@
   "name": "catch-a-liar",
   "aliases": [],
   "tested": true,
-  "description": "The whole polygraph idea in ~30 lines of C, no Arm hardware and no model download required: examples/catch-a-liar/liar.c prints \"using fast path: yes\" but (built the default way) never calls fast_path_sum() -- built with -DACTUALLY_FAST, it genuinely does.",
+  "description": "The whole polygraph idea in ~45 lines of C, no Arm hardware and no model download required: examples/catch-a-liar/liar.c prints \"using fast path: yes\" but (built the default way) never calls fast_path_sum() -- built with -DACTUALLY_FAST, it genuinely does.",
   "why_it_matters": "This is llama.cpp's KleidiAI banner bug (see llama-cpp-kleidiai) shrunk to a fixture anyone can build and check in under a minute -- see examples/catch-a-liar/README.md and docs/QUICKSTART.md for the full walkthrough. This preset points `polygraph check catch-a-liar` at the SAME fixture examples/catch-a-liar/demo.sh drives via ad-hoc flags, so `polygraph list`/`polygraph explain catch-a-liar` also work, as docs/QUICKSTART.md documents.",
   "implicit_claim": true,
   "platforms": {

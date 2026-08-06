@@ -9,7 +9,7 @@ acceleration it uses match what actually happened? It answers by counting — co
 symbols, the runtime's own selection log, and (with a non-halting debugger breakpoint) real
 kernel dispatch hit counts — never by trusting a startup banner. The finding above is
 `llama.cpp`'s KleidiAI CPU backend on Arm, filed upstream as
-[ggml-org/llama.cpp#26547](https://github.com/ggml-org/llama.cpp/issues/26547); everything below
+[ggml-org/llama.cpp#26630](https://github.com/ggml-org/llama.cpp/issues/26630); everything below
 is the receipt.
 
 ## See it catch one, in two minutes, on your own laptop
@@ -26,7 +26,7 @@ make demo
 *(A real recording of `make demo` on an Apple M4 Max — not a mockup. Regenerate it yourself with
 `tools/render_demo_gif.py`.)*
 
-`examples/catch-a-liar/liar.c` is thirty lines of C compiled two ways. **Both builds print the
+`examples/catch-a-liar/liar.c` is 45 lines of C compiled two ways. **Both builds print the
 same banner — `using fast path: yes` — and return the same answer.** One of them is lying. The
 banner cannot tell you which; timing them barely can, because the fallback is fast enough to hide
 in the noise.
@@ -129,7 +129,7 @@ about most of them.
 |---|---|---:|---|---|
 | Apple M4 Max (macOS) | Laptop/desktop SoC | 16 | SME2 | Finding 1, the Apple M4 Max measured results, the optimization + patch |
 | Cortex-X925 / DGX Spark | Server-class Arm, Armv9.2 | 20 | SVE2 (128-bit) → I8MM/DOTPROD | Finding 2 (now dispatch-confirmed), Finding 3, the Cloud AI server lane |
-| Neoverse-N2 | Free, judge-reproducible CI (`ubuntu-24.04-arm`) | `[not measured]` | SVE2 (128-bit) | Finding 2's zero-cost, judge-reproducible static (L1) path |
+| Neoverse-N2 | Free, judge-reproducible CI (`ubuntu-24.04-arm`) | `[not measured]` | SVE2 (128-bit) | Finding 2's zero-cost judge-reproducible lane: build + correctness tests, the L3 gdb ground-truth harness, a dispatch sweep, a reduced bench, and a dedicated cloud-throughput measurement (`.github/workflows/verify-free-arm64.yml`) |
 
 ---
 

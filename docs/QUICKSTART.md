@@ -26,7 +26,7 @@ make demo
 What it does:
 
 1. Compiles [`examples/catch-a-liar/liar.c`](../examples/catch-a-liar/liar.c) two ways —
-   `build/liar` and `build/honest`. Read that file's header first; it's ~30 lines. Both binaries
+   `build/liar` and `build/honest`. Read that file's header first; it's ~45 lines. Both binaries
    print the identical banner line `using fast path: yes` — that line is a print-time claim, not
    proof, the same way `llama.cpp`'s `KLEIDIAI = 1` banner is.
 2. Runs `tools/polygraph check` against each, with a debugger attached to `fast_path_sum()`.
