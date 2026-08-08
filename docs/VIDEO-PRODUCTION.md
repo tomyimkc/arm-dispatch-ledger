@@ -292,3 +292,15 @@ measurement is conservative (includes torso), so a seeded layout can get
 nudged further off-center than the original solver would have placed it. The
 clearance invariant is enforced either way — if a beat looks too far off its
 third, relax `shiftX` toward the seed value and re-verify clearance.
+
+### Rendered re-cut (2026-08-08) — supersedes renders/polygraph-final.mp4
+
+`remotion/out/recut-2026-08-08.mp4` (90.05 s, 1920x1080@30, aac audio) plus the authored
+sidecar `remotion/out/recut-2026-08-08.srt` (36 cues) is the submission cut. It replaces the
+2026-08-05 race cut (`renders/polygraph-final.mp4`, kept for provenance): same reused beats
+01/03, four regenerated beats (02 finding-3, 04 catch-a-liar, 05 honesty, 06 close), no race
+cold-open. Verified by frame inspection at t=20/50/67/86 s on 2026-08-08: panels clear the
+presenter on every beat, captions in sync, close card shows BOTH upstream issues
+(llama.cpp #26630 + #26547). Every on-screen figure is registered in docs/CLAIMS.md's
+registry. Remaining owner steps: upload to YouTube, paste the URL into the Devpost Demo
+video field, re-paste the three changed narrative fields.
