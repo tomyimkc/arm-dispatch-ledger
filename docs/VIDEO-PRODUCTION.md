@@ -228,3 +228,67 @@ set to null/0 here) trip the renderer, delete or restore them — the plan does 
   rendered video rather than miss the upload buffer — it is compliant, just stale.
 - Close must name BOTH upstream issues (the old cut shows only #26547, which does not match the
   narrated headline finding — see README lede correction of 2026-08-06).
+
+### Exact re-cut pipeline (verified end-to-end on 2026-08-08)
+
+Everything deterministic is already prepared and validated:
+
+| File | Role | State |
+|---|---|---|
+| `gen/scenes-recut-2026-08-06.json` | generator scenes; 02/04/05/06 speeches trimmed 2026-08-08 to fit 15s at ~2.8 words/s (the shipped clips' pace) | valid JSON; beats 01/03 map to existing clips |
+| `remotion/story-recut-2026-08-06.json` | composition story (6 scenes, `raceAfter: null`) | structure-validated against `Polygraph.tsx`; duration 2700 frames = 90.0s |
+| `remotion/cues-recut-2026-08-06.json` | captions; 01/03 reused verbatim, new beats authored (not transcribed), timings estimated | validated: 6 cues per beat |
+| `gen/solve_layout.py` | recreated layout solver (original lost with the /tmp tree); `--validate` diffs committed `layout.json`; `--seed-from` keeps new beats framing-consistent with reused beats while enforcing the ≥0.055 head-clearance invariant against the measured head span | runs; invariant-enforcing |
+| `remotion/Root.tsx`, `remotion/Polygraph.tsx` | now race-optional: `raceAfter: null` renders without the cold open; the original `story.json` renders byte-identical to before | `tsc --noEmit` clean |
+
+The raw-clip processing step (also lost) was identified by probing: the API embeds an
+extra `mjpeg` stream in each raw clip; processing strips it and re-encodes (both
+generations are h264 1280x720 yuv420p 24fps with aac audio).
+
+**Steps:**
+
+```bash
+cd ~/Documents/GitHub/polygraph-video-assets
+
+# 1. Generate the 4 new presenter clips (01-intro and 03-howitworks are
+#    skipped automatically -- their raw clips already exist). Failed take:
+#    delete gen/output/<id>-raw.mp4 and re-run.
+python3 gen/generate.py --scenes gen/scenes-recut-2026-08-06.json
+
+# 2. Process raw clips into the composition's public dir.
+for id in 02-finding3 04-cli 05-honesty2 06-close2; do
+  ffmpeg -y -v error -i "gen/output/${id}-raw.mp4" -map 0:v:0 -map 0:a:0 \
+    -c:v libx264 -crf 17 -preset slow -pix_fmt yuv420p -c:a aac -b:a 192k \
+    "remotion/public/presenter/${id}.mp4"
+done
+
+# 3. Solve layout for the new clips (seed = same-side committed scene, so
+#    framing matches the reused beats; clearance is enforced either way).
+python3 gen/solve_layout.py --id 02-finding3 --clip remotion/public/presenter/02-finding3.mp4 --side RIGHT --seed-from 02-finding
+python3 gen/solve_layout.py --id 04-cli      --clip remotion/public/presenter/04-cli.mp4      --side RIGHT --seed-from 04-thefix
+python3 gen/solve_layout.py --id 05-honesty2 --clip remotion/public/presenter/05-honesty2.mp4 --side LEFT  --seed-from 05-honesty
+python3 gen/solve_layout.py --id 06-close2   --clip remotion/public/presenter/06-close2.mp4   --side RIGHT --seed-from 06-close
+# Merge the four printed entries into remotion/layout.json; keep the
+# 01-intro and 03-howitworks entries unchanged.
+
+# 4. Swap in the recut files (originals preserved as .bak).
+cd remotion
+cp story.json story-race-2026-08-05.json.bak
+cp cues.json  cues-race-2026-08-05.json.bak
+cp story-recut-2026-08-06.json story.json
+cp cues-recut-2026-08-06.json cues.json
+
+# 5. Render (expect 2700 frames = 90.0s; well under the 3:00 limit).
+npx remotion render Polygraph out/recut-2026-08-08.mp4
+```
+
+Then: author the sidecar `.srt` from `cues.json` text (never ASR), spot-check
+every beat for head clearance + caption sync (new-beat cue timings are
+estimates — nudge and re-render if they drift), confirm the close card shows
+BOTH issue numbers, and paste the YouTube URL into the Devpost field.
+
+**Known deviations to check visually:** `solve_layout.py`'s head-span
+measurement is conservative (includes torso), so a seeded layout can get
+nudged further off-center than the original solver would have placed it. The
+clearance invariant is enforced either way — if a beat looks too far off its
+third, relax `shiftX` toward the seed value and re-verify clearance.
